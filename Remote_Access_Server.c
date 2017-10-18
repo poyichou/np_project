@@ -1,5 +1,27 @@
 #define MAXLENG	10000
 #define MAXSIZE 10001
+const char WELCOME_MESSAGE[] =	"**************************************************************\n"
+								"** Welcome to the information server, myserver.nctu.edu.tw. **\n"
+								"**************************************************************\n"
+								"** You are in the directory, /home/studentA/ras/.\n"
+								"** This directory will be under \"/\", in this system.\n"
+								"** This directory includes the following executable programs.\n"
+								"** \n"
+								"**	bin/\n"
+								"**	test.html	(test file)\n"
+								"**\n"
+								"** The directory bin/ includes:\n"
+								"**	cat\n"
+								"**	ls\n"
+								"**	removetag		(Remove HTML tags.)\n"
+								"**	removetag0		(Remove HTML tags with error message.)\n"
+								"**	number			(Add a number in each line.)\n"
+								"**\n"
+								"** In addition, the following two commands are supported by ras. \n"
+								"**	setenv\n"
+								"**	printenv\n"
+								"**\n";
+
 #define SERV_TCP_PORT 5051
 #include<stdio.h>
 #include<string.h>
@@ -66,11 +88,13 @@ void process_request(int sockfd){
 	int rc, i, j, line_offset = 0;
 	int fill_back_flag = 0;
 	char line[MAXSIZE];
+	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 	for(i = 0 ; i < 1000 ; i++){
 		pipe(pipefd[i]);
 	}
 	while(1)
 	{
+		write(sockfd, "% ", 2);
 		rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
 		if(rc < 0){
 			err_dump("readline:read error\n");
