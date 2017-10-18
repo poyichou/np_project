@@ -20,16 +20,17 @@ int pipecount = 0;//only parent can handle it
 
 int main(int argc, char* argv[])
 {
-	int sockfd, newsockfd, clilen, childpid;
+	int sockfd, newsockfd, childpid;
 	struct sockaddr_in	cli_addr, serv_addr;
+	socklen_t clilen;
 	/*
 	 *Open a TCP socket(an Internet stream socket).
 	 */
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
 		err_dump("server:can't open stream socket\n");
 	}
-	//memset((char*)&serv_addr, 0, sizeof(serv_addr));
-	bzero((char *) &serv_addr, sizeof(serv_addr));
+	memset((char*)&serv_addr, 0, sizeof(serv_addr));
+	//bzero((char* )&serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family		= AF_INET;
 	serv_addr.sin_addr.s_addr	= htonl(INADDR_ANY);
 	serv_addr.sin_port			= htons(SERV_TCP_PORT);
@@ -41,7 +42,7 @@ int main(int argc, char* argv[])
 	while(1)
 	{
 		clilen = sizeof(cli_addr);
-		newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
+		newsockfd = accept(sockfd, ((struct sockaddr*)&cli_addr), &clilen);
 		if(newsockfd < 0){
 			err_dump("server:accept error\n");
 		}
@@ -62,26 +63,39 @@ void err_dump(char* msg){
 	exit(1);
 }
 void process_request(int sockfd){
-	int n, rc, i;
+	int rc, i, j, line_offset = 0;
+	int fill_back_flag = 0;
 	char line[MAXSIZE];
 	for(i = 0 ; i < 1000 ; i++){
 		pipe(pipefd[i]);
 	}
 	while(1)
 	{
-		rc = read(sockfd, line, MAXLENG);
+		rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
 		if(rc < 0){
 			err_dump("readline:read error\n");
-		}else{//maybe contain not one command
-			for(i = 0 ; i < rc ; i++){
+		}else if(rc == 0 && line_offset == 0){//finished
+			exit(0);
+		}else{//may contain not one command
+			for(i = 0 ; i < rc + line_offset ; i++){
 				if( (line[i] == '\n' || line[i] == '\0') && i < (rc - 1) ){//contain more than one command
-					line[i] = '\0';
+					line[i] = '\0';//i == length of first command
 					parser(line, i);
-					//TODO:not done
+					for(j = 0 ; j < rc + line_offset -i ; j++){
+						line[j] = line[j+i];
+					}
+					line_offset = rc + line_offset - i;
+					fill_back_flag = 1;
+					break;
 				}
 			}
-			line[rc] = '\0';
-			parser(line, rc);
+			if(fill_back_flag == 1){
+				fill_back_flag = 0;
+				break;
+			}
+			//contain only one command
+			line[rc + line_offset] = '\0';
+			parser(line, rc + line_offset);
 		}
 	}
 }
