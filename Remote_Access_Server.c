@@ -1,13 +1,15 @@
-#define MAXLINE	512
+#define MAXLINE	10000
 #define SERV_TCP_PORT 5051
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
+#include<unistd.h>
 #include<arpa/inet.h>
 void mysetenv(char* ,char* , int);
 void printenv();
 void err_dump(char*);
 void process_request(int);
+int readline(int, char*, int);
 
 int main(int argc, char* argv[])
 {
@@ -53,7 +55,28 @@ void err_dump(char* msg){
 	perror(msg);
 	exit(1);
 }
-void process_request(int newsockfd){}
+void process_request(int sockfd){
+	int n;
+	char line[MAXLINE];
+	while(1)
+	{
+		//The length of a single-line input will not exceed 10000 characters.
+		n = readline(sockfd, line, MAXLINE);
+		if(n == 0){
+			return;
+		}else if(n < 0){
+			err_dump("process_request:readline error");
+		}
+		//if(writen(sockfd, line, n)!= n){
+		//	err_dump("process_request:writen error");
+		//}
+	}
+}
+int readline(int fd, char* ptr, int maxlen){
+	int n,rc;
+	read(fd, ptr, maxlen);
+	
+}
 void mysetenv(char* name, char* value, int replace){
 	if(setenv(name, value, replace) == 0){
 		printf("change env succeeded!!\n");
