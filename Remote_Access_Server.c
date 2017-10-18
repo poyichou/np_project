@@ -6,13 +6,18 @@
 #include<stdlib.h>
 #include<unistd.h>
 #include<arpa/inet.h>
+
 void mysetenv(char* ,char* , int);
 void printenv();
 void err_dump(char*);
 void process_request(int);
 int readline(int, char*, int);
 void parser(char*, int);
-int checkargv(char*, char*, int);
+int checkarg(char*, char*, int);
+
+int pipefd[1000][2];
+int pipecount = 0;//only parent can handle it
+
 int main(int argc, char* argv[])
 {
 	int sockfd, newsockfd, clilen, childpid;
@@ -59,19 +64,9 @@ void err_dump(char* msg){
 void process_request(int sockfd){
 	int n, rc, i;
 	char line[MAXSIZE];
-	//while(1)
-	//{
-	//	//The length of a single-line input will not exceed 10000 characters.
-	//	n = readline(sockfd, line, MAXLENG);
-	//	if(n == 0){
-	//		return;
-	//	}else if(n < 0){
-	//		err_dump("process_request:readline error\n");
-	//	}
-	//	//if(writen(sockfd, line, n)!= n){
-	//	//	err_dump("process_request:writen error");
-	//	//}
-	//}
+	for(i = 0 ; i < 1000 ; i++){
+		pipe(pipefd[i]);
+	}
 	while(1)
 	{
 		rc = read(sockfd, line, MAXLENG);
@@ -90,17 +85,60 @@ void process_request(int sockfd){
 		}
 	}
 }
-void parser(char* line, int len){
+void parser(char* line, int len){//it also call exec
 	char *buff;
-	char *argv[checkargv(line, " ", len)];
+	int pid;
+	int argcount = 0;
+	char *arg[checkarg(line, " ", len)];
+	int i;
 	buff = strtok(line, " ");
+	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
+	strcpy(arg[argcount++], buff);
 	while(buff != NULL)
 	{
-		buff = strtok(NULL, " ");
+		if(buff[0] == '|'){//pipe occur!!
+			pipecount++;
+			arg[argcount] = NULL;
+			argcount = 0;
+			if((pid = fork()) == 0){//fork a child
+				if(pipecount > 1){// there'd been other pipe
+					dup2(pipecount * 2 - 1, 0);//last pipe read
+				}
+				if(buff[1] == '\0'){//normal pipe, equal |x, x is a number
+					dup2((pipecount + 1) * 2, 1);
+					for(i = 1 ; i <= 1000 ; i++){
+						close((i + 1) * 2 - 1);
+						close((i + 1) * 2);
+					}
+				}else{//|x x is a number
+					dup2(pipecount + (buff[1] - '0') * 2, 1);
+					for(i = 1 ; i <= 1000 ; i++){
+						close((i + 1) * 2 - 1);
+						close((i + 1) * 2);
+					}
+				}
+				execvp(arg[0], arg);
+				exit(1);
+			}
+		}else{
+			arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
+			strcpy(arg[argcount++], buff);
+		}
+		buff = strtok(line, " ");
 	}
-	
+	//no more pipe!!
+	if((pid =fork()) == 0){
+		if(pipecount > 1){
+			dup2(pipecount * 2 - 1, 0);
+		}
+		for(i = 1 ; i <= 1000 ; i++){
+			close((i + 1) * 2 - 1);
+			close((i + 1) * 2);
+		}
+		execvp(arg[0], arg);
+	}
 }
-int checkargv(char* str, char* delim, int len){
+int checkarg(char* str, char* delim, int len){
 	char tempstr[len + 1];
 	memset(tempstr, 0, sizeof(tempstr));
 	int i = 0;
@@ -118,16 +156,16 @@ int checkargv(char* str, char* delim, int len){
 	}
 	return n;
 }
-int readline(int fd, char* ptr, int maxlen){
-	int n,rc;
-	rc = read(fd, ptr, maxlen);
-	if(rc < 0){
-		err_dump("readline:read error\n");
-	}else if(rc < maxlen){
-		
-	}
-	
-}
+//int readline(int fd, char* ptr, int maxlen){
+//	int n,rc;
+//	rc = read(fd, ptr, maxlen);
+//	if(rc < 0){
+//		err_dump("readline:read error\n");
+//	}else if(rc < maxlen){
+//		
+//	}
+//	
+//}
 void mysetenv(char* name, char* value, int replace){
 	if(setenv(name, value, replace) == 0){
 		printf("change env succeeded!!\n");
