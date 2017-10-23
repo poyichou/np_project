@@ -26,20 +26,12 @@ struct numbered_pipe_command command[1000];
 void err_dump(char*);
 void process_request(int);
 void parser(int, char*, int);
-void reset_io_redirection(char*, int*, char*, int*);
-void change_pipecount(int*);
 void close_pipe(int);
-void dup_out(int);
 void redirection(char *, char *, int *, int);
-void pipe_idle_pipefd(int);
-void precheck_io_redirection_pipe_io(int, int *, char *, int *, char *, int, int);
 void free_command(int, int *);
 void close_pipe_in_fd(int *);
-void free_file(char* );
 void initial_command_count(struct numbered_pipe_command *, char*);
-void initial_command_file(struct numbered_pipe_command*, char*, char*);
 void initial_command_refd_pipe_fd(int);
-int  readline(int, char*, int);
 int  checkarg(char*, char*, int);
 
 void freeCommand(struct numbered_pipe_command);
@@ -136,6 +128,7 @@ void parser(int fd, char* line, int len){//it also call exec
 							if(dup2(refd_in_cmd, 0) < 0){
 								err_dump("dup2 refd_in_cmd error");
 							}
+							refd_in_cmd = 0;
 						}else if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
 							if(dup2(command[i].pipe_in_fd[0], 0) < 0){
 								err_dump("dup error");
@@ -159,6 +152,8 @@ void parser(int fd, char* line, int len){//it also call exec
 						//execute
 						execvp(command[i].arg[0], command[i].arg);
 						err_dump("execvp failed");
+					}else if(pid < 0){
+						err_dump("fork error");
 					}
 					//parent
 
@@ -241,6 +236,8 @@ void parser(int fd, char* line, int len){//it also call exec
 				}
 				execvp(arg[0], arg);
 				err_dump("execvp failed");
+			}else if(pid < 0){
+				err_dump("fork error");
 			}
 			//parent
 
@@ -250,15 +247,22 @@ void parser(int fd, char* line, int len){//it also call exec
 				arg[i] = NULL;
 			}
 			argcount = 0;
-			free_file(infile);
-			free_file(outfile);
+			//free file
+			if(infile != NULL){
+				free(infile);
+				infile = NULL;
+			}
+			if(outfile != NULL){
+				free(outfile);
+				outfile = NULL;
+			}
 			close_pipe_in_fd(pipe_in_fd);
 			//wait for all child
 			while ((wpid = wait(&status)) > 0);
 			break;
 		}else if(buff == NULL && argcount == 0){
 			break;
-		}else if(buff[0] == '|' && strlen(buff) >= 1){// numbered pipe // store it
+		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount > 0){// numbered pipe // store it
 			//initial a command
 			command[cmdcount].idx = 0;
 			//initial_command_count
@@ -272,7 +276,17 @@ void parser(int fd, char* line, int len){//it also call exec
 			command[cmdcount].arg[i] = NULL;
 			argcount = 0;
 			//initial_command_file
-			initial_command_file(&command[cmdcount], infile, outfile);
+			if(outfile != NULL){
+				free(outfile);
+				outfile = NULL;
+				err_dump("pipe out while has output file");
+			}
+			if(infile != NULL){
+				command[cmdcount].infile = malloc((strlen(infile) + 1) * sizeof(char));
+				strcpy(command[cmdcount].infile, infile);
+				free(infile);
+				infile = NULL;
+			}
 			initial_command_refd_pipe_fd(cmdcount);
 			//put it here to avoid idx++ of this command
 			cmdcount++;
@@ -326,6 +340,8 @@ void parser(int fd, char* line, int len){//it also call exec
 						//execute
 						execvp(command[i].arg[0], command[i].arg);
 						err_dump("execvp failed");
+					}else if(pid < 0){
+						err_dump("fork error");
 					}
 					//parent
 
@@ -383,7 +399,10 @@ void parser(int fd, char* line, int len){//it also call exec
 			}
 			while ((wpid = wait(&status)) > 0);
 
-		}else if(buff[0] == '>'){//redirect >
+		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount == 0){
+			err_dump("continual pipe");
+		}
+		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename
 			//copy filename
 			if(outfile != NULL){
@@ -401,6 +420,7 @@ void parser(int fd, char* line, int len){//it also call exec
 			//copy filename
 			if(infile != NULL){
 				free(infile);
+				infile = NULL;
 				err_dump("mutiple input file");
 			}
 			if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
@@ -424,19 +444,6 @@ void initial_command_refd_pipe_fd(int commandcount){
 	command[commandcount].pipe_out_fd[0] = 0;
 	command[commandcount].pipe_out_fd[1] = 0;
 }
-void initial_command_file(struct numbered_pipe_command* command, char* infile, char* outfile){
-	if(outfile != NULL){
-		free(outfile);
-		outfile = NULL;
-		err_dump("pipe out while has output file");
-	}
-	if(infile != NULL){
-		command -> infile = malloc((strlen(infile) + 1) * sizeof(char));
-		strcpy(command -> infile, infile);
-		free(infile);
-		infile = NULL;
-	}
-}
 void initial_command_count(struct numbered_pipe_command *command, char* buff){
 	int i;
 	if(strlen(buff) == 1){
@@ -449,12 +456,6 @@ void initial_command_count(struct numbered_pipe_command *command, char* buff){
 		}
 		pipe_num_str[i - 1] = '\0';
 		command -> count = atoi(pipe_num_str);
-	}
-}
-void free_file(char* file){
-	if(file != NULL){
-		free(file);
-		file = NULL;
 	}
 }
 void close_pipe_in_fd(int *pipe_in_fd){
@@ -496,71 +497,6 @@ void free_command(int idx , int *commandcount){
 	command[cmdcount].pipe_out_fd[1] = 0;
 	(*commandcount)--;
 }
-void precheck_io_redirection_pipe_io(int pipe_flag, int *refd_in, char *infile, int *refd_out, char *outfile, int count, int if_pipe_out){
-	//pipe out or file_out
-	if(*refd_out > 0 && if_pipe_out == 0){
-		if(dup2(*refd_out, 1) < 0){
-			err_dump("dup error");
-		}
-		*refd_out = 0;
-		free(outfile);
-		outfile = NULL;
-	}else if(*refd_out > 0 && if_pipe_out == 1){
-		err_dump("pipe out while has output file");
-	}
-	if(if_pipe_out == 1){
-		dup_out(count);
-	}
-	//pipe in or file in
-	if(pipe_flag == 1 && *refd_in <= 0){
-		if(dup2(pipefd[count][0], 0) < 0){
-			err_dump("dup error");
-		}
-		if(close(pipefd[count][1]) < 0){
-			err_dump("close error");
-		}
-		pipefd[count][1] = 0;
-	}else if(pipe_flag == 0 && *refd_in > 0){
-		if(dup2(*refd_in, 0) < 0){
-			err_dump("dup error");
-		}
-		*refd_in = 0;
-		free(infile);
-		infile = NULL;
-	}else if(pipe_flag == 1 && *refd_in > 0){
-		err_dump("pipe in while has input file");
-	}
-}
-void dup_out(int count){
-	if(count == 0){
-		if(dup2(pipefd[count + 1][1], 1) < 0){
-			err_dump("dup error");
-		}
-		if(close(pipefd[count + 1][0]) < 0){
-			err_dump("close error");
-		}
-		pipefd[count + 1][0] = 0;
-	}else if(count == 1){
-		if(dup2(pipefd[count - 1][1], 1) < 0){
-			err_dump("dup error");
-		}
-		if(close(pipefd[count - 1][0]) < 0){
-			err_dump("close error");
-		}
-		pipefd[count - 1][0] = 0;
-	}
-}
-void pipe_idle_pipefd(int count){
-	if(count == 0){
-		if(pipe(pipefd[count + 1]) < 0){
-			err_dump("pipe error");
-		}
-	}else if(count == 1){
-		if(pipe(pipefd[count - 1]) < 0){
-			err_dump("pipe error");
-		}
-	}
-}
 void redirection(char *file, char *buff, int *refd, int io){
 	if(file != NULL){
 		err_dump("mutiple input file");
@@ -581,32 +517,11 @@ void redirection(char *file, char *buff, int *refd, int io){
 	//	err_dump("open error");
 	//}
 }
-void reset_io_redirection(char* infile, int* refd_in, char* outfile, int* refd_out){
-	if(*refd_out > 0){
-		close(*refd_out);
-		*refd_out = 0;
-		free(outfile);
-		outfile = NULL;
-	}
-	if(*refd_in > 0){
-		close(*refd_in);
-		*refd_in = 0;
-		free(infile);
-		infile = NULL;
-	}
-}
 void close_pipe(int count){
 	if(pipefd[count][0] > 0 && close(pipefd[count][0]) < 0) err_dump("close error");
 	if(pipefd[count][1] > 0 && close(pipefd[count][1]) < 0) err_dump("close error");
 	pipefd[count][0] = 0;
 	pipefd[count][1] = 0;
-}
-void change_pipecount(int* p){
-	if(*p == 0){
-		*p = 1;
-	}else if(*p == 1){
-		*p = 0;
-	}
 }
 void err_dump(char* msg){
 	perror(msg);
