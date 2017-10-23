@@ -38,11 +38,26 @@ void freeCommand(struct numbered_pipe_command);
 int pipefd[2][2];
 int pipe_flag = 0;
 int cmdcount = 0;
+char *pathes[256];
 int main(int argc, char** argv)
 {
 	int rc, i, j, line_offset = 0;
 	int fill_back_flag = 0;
 	char line[MAXSIZE];
+	char *PATH = getenv("PATH");
+	char my_PATH[256];
+	char *buff;
+	i=0;
+	strcpy(my_PATH, PATH);
+	buff = strtok(my_PATH, ":");
+	while(buff != NULL)
+	{
+		pathes[i] = malloc((strlen(buff) + 1) * sizeof(char));
+		strcpy(pathes[i++], buff);
+		buff = strtok(NULL, ":");
+	}
+	pathes[i] = NULL;
+
 	while(1)
 	{
 		write(1, "% ", 2);
@@ -95,10 +110,32 @@ void parser(int fd, char* line, int len){//it also call exec
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
 	arg[argcount] = NULL;
-
-	if(buff[0] == '|'){//pipe occur!! weird!!
-		err_dump("parser:first token is |");
+	//test if it is valid
+	char tmp_path[256];
+	int passflag = 0;
+	for(i = 0 ; pathes[i] != NULL ; i++){
+		tmp_path[0] = '\0';
+		strcpy(tmp_path, pathes[i]);
+		strcat(tmp_path, "/");
+		strcat(tmp_path, buff);
+		if(access(tmp_path, X_OK) == 0){
+			passflag = 1;
+			break;
+		}
 	}
+	//only one invalid command in one line
+	if(passflag == 0){
+		for(i = 0 ; i < cmdcount ; i++){
+			if(++command[i].idx == command[i].count){
+				free_command(i, &cmdcount);
+			}
+		}
+		err_dump("Command not found");
+	}
+
+	//if(buff[0] == '|'){//pipe occur!! weird!!
+	//	err_dump("parser:first token is |");
+	//}
 	while(1)//not cmd: > < |n |
 	{
 		buff = strtok(NULL, " ");
@@ -430,6 +467,21 @@ void parser(int fd, char* line, int len){//it also call exec
 			strcpy(infile, buff);
 			//redirection(infile, buff, &refd_in, 0);
 		}else if(buff != NULL){
+			if(argcount == 0){
+				for(i = 0 ; pathes[i] != NULL ; i++){
+					tmp_path[0] = '\0';
+					strcpy(tmp_path, pathes[i]);
+					strcat(tmp_path, "/");
+					strcat(tmp_path, buff);
+					if(access(tmp_path, X_OK) == 0){
+						passflag = 1;
+					}
+				}
+				if(passflag == 0){//only one invalid command in one line
+					err_dump("Command not found");
+					break;
+				}
+			}
 			arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(arg[argcount++], buff);
 			arg[argcount] = NULL;
