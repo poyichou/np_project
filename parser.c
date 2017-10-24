@@ -32,9 +32,13 @@ void free_command(int, int *);
 void close_pipe_in_fd(int *);
 void initial_command_count(struct numbered_pipe_command *, char*);
 void initial_command_refd_pipe_fd(int);
+void pipe_out_pipe_in(int *, int *);
+void my_execvp_cmd(int *, int);
+void my_execvp(int *, int *, char *, char *, char *[]);
+void parent_close(int *pipe_infd, int *pipe_out_fd);
+void read_in_write_out(int, int);
 int  checkarg(char*, char*, int);
 
-void freeCommand(struct numbered_pipe_command);
 int pipefd[2][2];
 int pipe_flag = 0;
 int cmdcount = 0;
@@ -101,11 +105,8 @@ void parser(int fd, char* line, int len){//it also call exec
 	int argcount = 0;
 	char *arg[checkarg(line, " ", len)];
 	int i;
-	int refd_in = 0, refd_out = 0;
 	char *infile = NULL, *outfile = NULL;
-	int refd_in_cmd = 0;
-	int rc = 0, wc = 0;
-	int pipe_in_fd[2];
+	int pipe_in_fd[2] = {0};
 	buff = strtok(line, " ");
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
@@ -145,92 +146,18 @@ void parser(int fd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					//pipe to real command
-					if(pipe_in_fd[0] == 0 && pipe(pipe_in_fd) < 0){
-						err_dump("pipe_in_fd error");
-					}
-					//pipe to self pipe_out_fd
-					if(pipe(command[i].pipe_out_fd) < 0){
-						err_dump("pipe_out_fd error");
-					}
+					pipe_out_pipe_in(command[i].pipe_out_fd, pipe_in_fd);
 					//child
-					if((pid = fork()) == 0){
-						//open file //outfile doesn't exist
-						//won't happen while pipe_in exists
-						if(command[i].infile != NULL && command[i].pipe_in_fd[0] == 0){//infile
-							refd_in_cmd = open(command[i].infile, O_RDONLY);
-							if(refd_in_cmd < 0){
-								err_dump("open error");
-							}
-							if(dup2(refd_in_cmd, 0) < 0){
-								err_dump("dup2 refd_in_cmd error");
-							}
-							refd_in_cmd = 0;
-						}else if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
-							if(dup2(command[i].pipe_in_fd[0], 0) < 0){
-								err_dump("dup error");
-							}
-							if(close(command[i].pipe_in_fd[1]) < 0){
-								err_dump("close error");
-							}
-						}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] > 0){
-							err_dump("inputfile while pipe_in");
-						}
-						//must pipe out
-						if(dup2(command[i].pipe_out_fd[1], 1) < 0){
-							err_dump("dup error");
-						}
-						if(command[i].pipe_out_fd[0] > 0){
-							if(close(command[i].pipe_in_fd[0]) < 0){
-								err_dump("close pipe_in_fd[0] error");
-							}
-							command[i].pipe_in_fd[0] = 0;
-						}
-						//execute
-						execvp(command[i].arg[0], command[i].arg);
-						err_dump("execvp failed");
-					}else if(pid < 0){
-						err_dump("fork error");
-					}
+					my_execvp_cmd(&pid, i);
 					//parent
-
-					if(command[i].pipe_in_fd[0] > 0){
-						if(close(command[i].pipe_in_fd[0]) < 0){
-							err_dump("close pipe_in_fd[0] error");
-						}
-						command[i].pipe_in_fd[0] = 0;
-					}
-					if(command[i].pipe_in_fd[1] > 0){
-						if(close(command[i].pipe_in_fd[1]) < 0){
-							err_dump("close pipe_in_fd[1] error");
-						}
-						command[i].pipe_in_fd[1] = 0;
-					}
-					if(command[i].pipe_out_fd[1] > 0){
-						if(close(command[i].pipe_out_fd[1]) < 0){
-							err_dump("close pipe_in_fd[1] error");
-						}
-						command[i].pipe_out_fd[1] = 0;
-					}
+					parent_close(command[i].pipe_in_fd, command[i].pipe_out_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
 			for(i = 0 ; i < cmdcount ; i++){
 				// there's a pipe_in to this cmd // already execute
 				if(command[i].idx == command[i].count){
-					char tmpbuff[1000];
-					do{
-						//read
-						rc = read(command[i].pipe_out_fd[0], tmpbuff, 1000);
-						if(rc < 0){
-							err_dump("read error");
-						}
-						//write
-						wc = write(pipe_in_fd[1], tmpbuff, rc);//will be read when command[cmdcount - 1] execute
-						if(wc < 0){
-							err_dump("read error");
-						}
-					}while(rc == 1000);
+					read_in_write_out(command[i].pipe_out_fd[0], pipe_in_fd[1]);
 					//close out
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
 					free_command(i, &cmdcount);
@@ -239,43 +166,7 @@ void parser(int fd, char* line, int len){//it also call exec
 				}
 			}
 			//real command
-			if((pid = fork()) == 0){
-				//determine_pipe_in_or_file_in
-				if(pipe_in_fd[0] > 0 && infile == NULL){//input is pipe_in
-					if(dup2(pipe_in_fd[0], 0) < 0){
-						err_dump("dup pipe_in_fd[0] error");
-					}
-					pipe_in_fd[0] = 0;
-					if(close(pipe_in_fd[1]) < 0){
-						err_dump("close error");
-					}
-				}else if(pipe_in_fd[0] == 0 && infile != NULL){//input is file
-					refd_in = open(infile, O_RDONLY);
-					if(refd_in < 0){
-						err_dump("open infile error");
-					}
-					if(dup2(refd_in, 0) < 0){
-						err_dump("dup refd_in error");
-					}
-					refd_in = 0;
-				}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
-					err_dump("pipe_in while has input file");
-				}
-				//only file_out could happen
-				if(outfile != NULL){
-					refd_out = open(outfile, O_WRONLY | O_CREAT, 0666);
-					if(refd_out < 0){
-						err_dump("open outfile error");
-					}
-					if(dup2(refd_out, 1) < 0){
-						err_dump("dup refd_out error");
-					}
-				}
-				execvp(arg[0], arg);
-				err_dump("execvp failed");
-			}else if(pid < 0){
-				err_dump("fork error");
-			}
+			my_execvp(&pid, pipe_in_fd, infile, outfile, arg);
 			//parent
 
 			//free arg
@@ -332,102 +223,18 @@ void parser(int fd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					//pipe to real command
-					if(command[cmdcount - 1].pipe_in_fd[0] == 0 && pipe(command[cmdcount - 1].pipe_in_fd) < 0){
-						err_dump("pipe_in_fd error");
-					}
-					//pipe to self pipe_out_fd
-					if(pipe(command[i].pipe_out_fd) < 0){
-						err_dump("pipe_out_fd error");
-					}
+					pipe_out_pipe_in(command[i].pipe_out_fd, command[cmdcount - 1].pipe_in_fd);
 					//child
-					if((pid = fork()) == 0){
-						//open file //outfile doesn't exist
-						//won't happen while pipe_in exists
-						if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){// pipe_in, then dup
-							if(dup2(command[i].pipe_in_fd[0], 0) < 0){
-								err_dump("dup error");
-							}
-							command[i].pipe_in_fd[0] = 0;
-							if(close(command[i].pipe_in_fd[1]) < 0){
-								err_dump("close error");
-							}
-						}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] == 0){//input file
-							refd_in_cmd = open(command[i].infile, O_RDONLY);
-							if(refd_in_cmd < 0){
-								err_dump("open error");
-							}
-							if(dup2(refd_in_cmd, 0) < 0){
-								err_dump("dup2 refd_in_cmd error");
-							}
-							refd_in_cmd = 0;
-						}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] > 0){
-							err_dump("inputfile while pipe_in");
-						}
-						//must pipe out
-						if(dup2(command[i].pipe_out_fd[1], 1) < 0){
-							err_dump("dup error");
-						}
-						if(command[i].pipe_out_fd[0] > 0){
-							if(close(command[i].pipe_out_fd[0]) < 0){
-								err_dump("close error");
-							}
-							command[i].pipe_out_fd[0] = 0;
-						}
-						//execute
-						execvp(command[i].arg[0], command[i].arg);
-						err_dump("execvp failed");
-					}else if(pid < 0){
-						err_dump("fork error");
-					}
+					my_execvp_cmd(&pid, i);
 					//parent
-
-					if(command[i].pipe_in_fd[0] > 0){
-						if(close(command[i].pipe_in_fd[0]) < 0){
-							err_dump("close pipe_in_fd[0] error");
-						}
-						command[i].pipe_in_fd[0] = 0;
-					}
-					if(command[i].pipe_in_fd[1] > 0){
-						if(close(command[i].pipe_in_fd[1]) < 0){
-							err_dump("close pipe_in_fd[1] error");
-						}
-						command[i].pipe_in_fd[1] = 0;
-					}
-
-					//close out
-					if(command[i].pipe_out_fd[1] > 0){
-						if(close(command[i].pipe_out_fd[1]) < 0){
-							err_dump("close pipe_out_fd[1] error");
-						}
-						command[i].pipe_out_fd[1] = 0;
-					}
+					parent_close(command[i].pipe_in_fd, command[i].pipe_out_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
 			for(i = 0 ; i < cmdcount - 1 ; i++){
 				// there's a pipe_in to this cmd // already execute
 				if(command[i].idx == command[i].count){
-					char tmpbuff[1000];
-					do{
-						//read
-						rc = read(command[i].pipe_out_fd[0], tmpbuff, 1000);
-						if(rc < 0){
-							err_dump("read error");
-						}
-						//if not piped yet
-						if(command[cmdcount - 1].pipe_in_fd[0] == 0 && command[cmdcount - 1].pipe_in_fd[1] == 0){
-							//pipe
-							if(pipe(command[cmdcount - 1].pipe_in_fd) < 0){
-								err_dump("pipe error");
-							}
-						}
-						//write
-						wc = write(command[cmdcount - 1].pipe_in_fd[1], tmpbuff, rc);//will be read when command[cmdcount - 1] execute
-						if(wc < 0){
-							err_dump("read error");
-						}
-					}while(rc == 1000);
+					read_in_write_out(command[i].pipe_out_fd[0], command[cmdcount - 1].pipe_in_fd[1]);
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
 					free_command(i, &cmdcount);
 					//because of filling back
@@ -467,6 +274,7 @@ void parser(int fd, char* line, int len){//it also call exec
 			strcpy(infile, buff);
 			//redirection(infile, buff, &refd_in, 0);
 		}else if(buff != NULL){
+			//test if it exists
 			if(argcount == 0){
 				for(i = 0 ; pathes[i] != NULL ; i++){
 					tmp_path[0] = '\0';
@@ -486,6 +294,135 @@ void parser(int fd, char* line, int len){//it also call exec
 			strcpy(arg[argcount++], buff);
 			arg[argcount] = NULL;
 		}
+	}
+}
+void read_in_write_out(int out_fd, int in_fd){
+	int rc = 0, wc = 0;
+	char tmpbuff[1000];
+	do{
+		//read
+		rc = read(out_fd, tmpbuff, 1000);
+		if(rc < 0){
+			err_dump("read error");
+		}
+		//write
+		wc = write(in_fd, tmpbuff, rc);//will be read when command[cmdcount - 1] execute
+		if(wc < 0){
+			err_dump("read error");
+		}
+	}while(rc == 1000);
+}
+void parent_close(int *pipe_in_fd, int *pipe_out_fd){
+	if(pipe_in_fd[0] > 0){
+		if(close(pipe_in_fd[0]) < 0){
+			err_dump("close pipe_in_fd[0] error");
+		}
+		pipe_in_fd[0] = 0;
+	}
+	if(pipe_in_fd[1] > 0){
+		if(close(pipe_in_fd[1]) < 0){
+			err_dump("close pipe_in_fd[1] error");
+		}
+		pipe_in_fd[1] = 0;
+	}
+	if(pipe_out_fd[1] > 0){
+		if(close(pipe_out_fd[1]) < 0){
+			err_dump("close pipe_in_fd[1] error");
+		}
+		pipe_out_fd[1] = 0;
+	}
+}
+void my_execvp(int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
+	int refd_in = 0, refd_out = 0;
+	//real command
+	if((*pid = fork()) == 0){
+		//determine_pipe_in_or_file_in
+		if(pipe_in_fd[0] > 0 && infile == NULL){//input is pipe_in
+			if(dup2(pipe_in_fd[0], 0) < 0){
+				err_dump("dup pipe_in_fd[0] error");
+			}
+			pipe_in_fd[0] = 0;
+			if(close(pipe_in_fd[1]) < 0){
+				err_dump("close error");
+			}
+		}else if(pipe_in_fd[0] == 0 && infile != NULL){//input is file
+			refd_in = open(infile, O_RDONLY);
+			if(refd_in < 0){
+				err_dump("open infile error");
+			}
+			if(dup2(refd_in, 0) < 0){
+				err_dump("dup refd_in error");
+			}
+			refd_in = 0;
+		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
+			err_dump("pipe_in while has input file");
+		}
+		//only file_out could happen
+		if(outfile != NULL){
+			refd_out = open(outfile, O_WRONLY | O_CREAT, 0666);
+			if(refd_out < 0){
+				err_dump("open outfile error");
+			}
+			if(dup2(refd_out, 1) < 0){
+				err_dump("dup refd_out error");
+			}
+		}
+		execvp(arg[0], arg);
+		err_dump("execvp failed");
+	}else if(*pid < 0){
+		err_dump("fork error");
+	}
+}
+void my_execvp_cmd(int *pid, int i){
+	int refd_in_cmd = 0;
+	//child
+	if((*pid = fork()) == 0){
+		//open file //outfile doesn't exist
+		//won't happen while pipe_in exists
+		if(command[i].infile != NULL && command[i].pipe_in_fd[0] == 0){//infile
+			refd_in_cmd = open(command[i].infile, O_RDONLY);
+			if(refd_in_cmd < 0){
+				err_dump("open error");
+			}
+			if(dup2(refd_in_cmd, 0) < 0){
+				err_dump("dup2 refd_in_cmd error");
+			}
+			refd_in_cmd = 0;
+		}else if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
+			if(dup2(command[i].pipe_in_fd[0], 0) < 0){
+				err_dump("dup error");
+			}
+			if(close(command[i].pipe_in_fd[1]) < 0){
+				err_dump("close error");
+			}
+		}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] > 0){
+			err_dump("inputfile while pipe_in");
+		}
+		//must pipe out
+		if(dup2(command[i].pipe_out_fd[1], 1) < 0){
+			err_dump("dup error");
+		}
+		if(command[i].pipe_out_fd[0] > 0){
+			if(close(command[i].pipe_in_fd[0]) < 0){
+				err_dump("close pipe_in_fd[0] error");
+			}
+			command[i].pipe_in_fd[0] = 0;
+		}
+		//execute
+		execvp(command[i].arg[0], command[i].arg);
+		err_dump("execvp failed");
+	}else if(*pid < 0){
+		err_dump("fork error");
+	}
+}
+void pipe_out_pipe_in(int *pipe_out_fd, int *pipe_in_fd){
+	//pipe to real command
+	if(pipe_in_fd[0] == 0 && pipe(pipe_in_fd) < 0){
+		err_dump("pipe_in_fd error");
+	}
+	//pipe to self pipe_out_fd
+	if(pipe(pipe_out_fd) < 0){
+		err_dump("pipe_out_fd error");
 	}
 }
 void initial_command_refd_pipe_fd(int commandcount){
