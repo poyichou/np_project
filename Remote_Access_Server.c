@@ -45,24 +45,23 @@ struct numbered_pipe_command{
 };
 struct numbered_pipe_command command[1000];
 
-void mysetenv(char* ,char* , int);
-void printenv();
-void err_dump(char*);
-void process_request(int);
-int readline(int, char*, int);
-void parser(int, char*, int);
-int checkarg(char*, char*, int);
-void close_pipe(int);
-void redirection(char *, char *, int *, int);
-void free_command(int, int *);
-void close_pipe_in_fd(int *);
-void initial_command_count(struct numbered_pipe_command *, char*);
-void initial_command_refd_pipe_fd(int);
-void pipe_out_pipe_in(int *, int *);
-void my_execvp_cmd(int *, int);
-void my_execvp(int, int *, int *, char *, char *, char *[]);
-void parent_close(int *pipe_infd, int *pipe_out_fd);
-void read_in_write_out(int, int);
+int  checkarg(char* str, char* delim, int len);
+void myprintenv(int sockfd);
+void err_dump(char* msg);
+int  err_dump_sock(int sockfd, char* msg);
+int  err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2);
+void process_request(int sockfd);
+int  parser(int sockfd, char* line, int len);
+void free_command(int idx , int *commandcount);
+void close_pipe_in_fd(int sockfd, int *pipe_in_fd);
+void initial_command_count(struct numbered_pipe_command *command, char* buff);
+void initial_command_refd_pipe_fd(int commandcount);
+void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd);
+void my_execvp_cmd(int sockfd, int *pid, int i);
+void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]);
+void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
+void read_in_write_out(int sockfd, int out_fd, int in_fd);
+int  build_in_or_command(int sockfd, char* line, int len);
 
 int pipefd[1000][2];
 int pipe_flag = 0;
@@ -113,6 +112,23 @@ void err_dump(char* msg){
 	perror(msg);
 	exit(1);
 }
+int err_dump_sock(int sockfd, char* msg){
+	dup2(sockfd, 2);
+	perror(msg);
+	return 1;
+}
+int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
+	char* result = NULL;
+	dup2(sockfd, 2);
+	int size = (strlen(msg) + strlen(v) + strlen(msg2) + 1) * sizeof(char);
+	result = malloc(size);
+	memset(result, 0, size);
+	strcpy(result, msg);
+	strcat(result, v);
+	strcat(result, msg2);
+	perror(result);
+	return 1;
+}
 void process_request(int sockfd){
 	int rc, i, j, line_offset = 0;
 	//int fill_back_flag = 0;
@@ -139,7 +155,7 @@ void process_request(int sockfd){
 		write(sockfd, "% ", 2);
 		rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
 		if(rc < 0){
-			err_dump("readline:read error\n");
+			err_dump_sock(sockfd, "readline:read error\n");
 		}else if(rc == 0 && line_offset == 0){//finished
 			exit(0);
 		}else{
@@ -151,22 +167,11 @@ void process_request(int sockfd){
 				}else if(line[i] != '\n' && line[i] != '\r' && enterflag == 1){//contain more than one command
 					break;
 				}
-				//if( (line[i] == '\n' || line[i] == '\0' || line[i] == '\r') && i < (rc + line_offset) ){//contain more than one command
-				//	line[i] = '\0';//i == length of first command
-				//	parser(sockfd, line, i);
-				//	for(j = 0 ; j < rc + line_offset -i ; j++){
-				//		line[j] = line[j + rc + line_offset];
-				//	}
-				//	line_offset = rc + line_offset - i;
-				//	fill_back_flag = 1;
-				//	break;
-				//}
 			}
-			//if(fill_back_flag == 1){
-			//	fill_back_flag = 0;
-			//	break;
-			//}
-			parser(sockfd, line, i);
+			//test command is built-in or not
+			if(build_in_or_command(sockfd, line, i) == 1){
+				return;
+			}
 			if(i < rc + line_offset){//contain more than one command
 				//clear
 				for(j = 0 ; j < i ; j++){
@@ -179,13 +184,57 @@ void process_request(int sockfd){
 				}
 				line_offset = j;
 			}
-			//contain only one command
-			//line[rc + line_offset] = '\0';
-			//parser(sockfd, line, rc + line_offset);
 		}
 	}
 }
-void parser(int fd, char* line, int len){//it also call exec
+int  build_in_or_command(int sockfd, char* line, int len){
+	if(strncmp(line, "exit", 4) == 0){//exit
+		return 1;
+	}else if(strncmp(line, "printenv", 8) == 0){
+		//printenv
+		char tmp_line[MAXSIZE];
+		char* vname;
+		strcpy(tmp_line, line);
+		vname = strtok(tmp_line, " ");
+		vname = strtok(NULL, " ");//name
+		if(vname == NULL){//no arg
+			myprintenv(sockfd);
+		}else{
+			char* vvalue = getenv(vname);
+			if(vvalue == NULL){
+				write(sockfd, "There is no match", (strlen("There is no match") + 1) * sizeof(char));
+			}else{
+				write(sockfd, vvalue, (strlen(vvalue) + 1) * sizeof(char));
+				write(sockfd, "\n", (strlen("\n") + 1) * sizeof(char));
+			}
+		}
+	}else if(strncmp(line, "setenv", 6) == 0){
+		//setenv
+		char tmp_line[MAXSIZE];
+		char* vname, *vvalue;// variable name, value
+		strcpy(tmp_line, line);
+		vname = strtok(tmp_line, " ");
+		//name
+		vname = strtok(NULL, " ");
+		//usage error
+		if(vname == NULL){
+			write(sockfd, "no variable name", (strlen("no variable name") + 1) * sizeof(char));
+		}
+		//value
+		vvalue = strtok(NULL, " ");
+		if(vvalue == NULL){// no value
+			write(sockfd, "no value", (strlen("no value") + 1) * sizeof(char));
+		}else{// has value
+			if(setenv(vname, vvalue, 1) != 0){//failed
+				write(sockfd, "change failed", (strlen("change failed") + 1) * sizeof(char));
+			}
+		}
+	}else{
+		parser(sockfd, line, len);
+	}
+	return 0;
+}
+int parser(int sockfd, char* line, int len){//it also call exec
 	char *buff;
 	int pid;
 	int wpid;
@@ -220,7 +269,7 @@ void parser(int fd, char* line, int len){//it also call exec
 				free_command(i, &cmdcount);
 			}
 		}
-		err_dump("Command not found");
+		return err_dump_sock(sockfd, "Command not found");
 	}
 
 	//if(buff[0] == '|'){//pipe occur!! weird!!
@@ -235,18 +284,18 @@ void parser(int fd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					pipe_out_pipe_in(command[i].pipe_out_fd, pipe_in_fd);
+					pipe_out_pipe_in(sockfd, command[i].pipe_out_fd, pipe_in_fd);
 					//child
-					my_execvp_cmd(&pid, i);
+					my_execvp_cmd(sockfd, &pid, i);
 					//parent
-					parent_close(command[i].pipe_in_fd, command[i].pipe_out_fd);
+					parent_close(sockfd, command[i].pipe_in_fd, command[i].pipe_out_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
 			for(i = 0 ; i < cmdcount ; i++){
 				// there's a pipe_in to this cmd // already execute
 				if(command[i].idx == command[i].count){
-					read_in_write_out(command[i].pipe_out_fd[0], pipe_in_fd[1]);
+					read_in_write_out(sockfd, command[i].pipe_out_fd[0], pipe_in_fd[1]);
 					//close out
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
 					free_command(i, &cmdcount);
@@ -255,9 +304,8 @@ void parser(int fd, char* line, int len){//it also call exec
 				}
 			}
 			//real command
-			my_execvp(fd, &pid, pipe_in_fd, infile, outfile, arg);
+			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg);
 			//parent
-
 			//free arg
 			for(i = 0 ; i < argcount ; i++){
 				free(arg[i]);
@@ -273,7 +321,7 @@ void parser(int fd, char* line, int len){//it also call exec
 				free(outfile);
 				outfile = NULL;
 			}
-			close_pipe_in_fd(pipe_in_fd);
+			close_pipe_in_fd(sockfd, pipe_in_fd);
 			//wait for all child
 			while ((wpid = wait(&status)) > 0);
 			break;
@@ -296,7 +344,7 @@ void parser(int fd, char* line, int len){//it also call exec
 			if(outfile != NULL){
 				free(outfile);
 				outfile = NULL;
-				err_dump("pipe out while has output file");
+				return err_dump_sock(sockfd, "pipe out while has output file");
 			}
 			if(infile != NULL){
 				command[cmdcount].infile = malloc((strlen(infile) + 1) * sizeof(char));
@@ -312,18 +360,18 @@ void parser(int fd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					pipe_out_pipe_in(command[i].pipe_out_fd, command[cmdcount - 1].pipe_in_fd);
+					pipe_out_pipe_in(sockfd, command[i].pipe_out_fd, command[cmdcount - 1].pipe_in_fd);
 					//child
-					my_execvp_cmd(&pid, i);
+					my_execvp_cmd(sockfd, &pid, i);
 					//parent
-					parent_close(command[i].pipe_in_fd, command[i].pipe_out_fd);
+					parent_close(sockfd, command[i].pipe_in_fd, command[i].pipe_out_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
 			for(i = 0 ; i < cmdcount - 1 ; i++){
 				// there's a pipe_in to this cmd // already execute
 				if(command[i].idx == command[i].count){
-					read_in_write_out(command[i].pipe_out_fd[0], command[cmdcount - 1].pipe_in_fd[1]);
+					read_in_write_out(sockfd, command[i].pipe_out_fd[0], command[cmdcount - 1].pipe_in_fd[1]);
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
 					free_command(i, &cmdcount);
 					//because of filling back
@@ -333,35 +381,33 @@ void parser(int fd, char* line, int len){//it also call exec
 			while ((wpid = wait(&status)) > 0);
 
 		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount == 0){
-			err_dump("continual pipe");
+			return err_dump_sock(sockfd, "continual pipe");
 		}
 		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename
 			//copy filename
 			if(outfile != NULL){
 				free(outfile);
-				err_dump("mutiple output file");
+				return err_dump_sock(sockfd, "mutiple output file");
 			}
 			if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
-				err_dump("no filename");
+				return err_dump_sock(sockfd, "no filename");
 			}
 			outfile = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(outfile, buff);
-			//redirection(outfile, buff, &refd_out, 1);
 		}else if(buff[0] == '<'){//redirect <
 			buff = strtok(NULL, " ");//filename
 			//copy filename
 			if(infile != NULL){
 				free(infile);
 				infile = NULL;
-				err_dump("mutiple input file");
+				return err_dump_sock(sockfd, "mutiple input file");
 			}
 			if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
-				err_dump("no filename");
+				return err_dump_sock(sockfd, "no filename");
 			}
 			infile = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(infile, buff);
-			//redirection(infile, buff, &refd_in, 0);
 		}else if(buff != NULL){
 			//test if it exists
 			if(argcount == 0){
@@ -375,7 +421,7 @@ void parser(int fd, char* line, int len){//it also call exec
 					}
 				}
 				if(passflag == 0){//only one invalid command in one line
-					err_dump("Command not found");
+					return err_dump_sock(sockfd, "Command not found");
 					break;
 				}
 			}
@@ -384,87 +430,88 @@ void parser(int fd, char* line, int len){//it also call exec
 			arg[argcount] = NULL;
 		}
 	}
+	return 0;
 }
-void read_in_write_out(int out_fd, int in_fd){
+void read_in_write_out(int sockfd, int out_fd, int in_fd){
 	int rc = 0, wc = 0;
 	char tmpbuff[1000];
 	do{
 		//read
 		rc = read(out_fd, tmpbuff, 1000);
 		if(rc < 0){
-			err_dump("read error");
+			err_dump_sock(sockfd, "read error");
 		}
 		//write
 		wc = write(in_fd, tmpbuff, rc);//will be read when command[cmdcount - 1] execute
 		if(wc < 0){
-			err_dump("read error");
+			err_dump_sock(sockfd, "read error");
 		}
 	}while(rc == 1000);
 }
-void parent_close(int *pipe_in_fd, int *pipe_out_fd){
+void parent_close(int sockfd, int *pipe_in_fd, int *pipe_out_fd){
 	if(pipe_in_fd[0] > 0){
 		if(close(pipe_in_fd[0]) < 0){
-			err_dump("close pipe_in_fd[0] error");
+			err_dump_sock(sockfd, "close pipe_in_fd[0] error");
 		}
 		pipe_in_fd[0] = 0;
 	}
 	if(pipe_in_fd[1] > 0){
 		if(close(pipe_in_fd[1]) < 0){
-			err_dump("close pipe_in_fd[1] error");
+			err_dump_sock(sockfd, "close pipe_in_fd[1] error");
 		}
 		pipe_in_fd[1] = 0;
 	}
 	if(pipe_out_fd[1] > 0){
 		if(close(pipe_out_fd[1]) < 0){
-			err_dump("close pipe_in_fd[1] error");
+			err_dump_sock(sockfd, "close pipe_in_fd[1] error");
 		}
 		pipe_out_fd[1] = 0;
 	}
 }
-void my_execvp(int fd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
+void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
 	int refd_in = 0, refd_out = 0;
 	//real command
 	if((*pid = fork()) == 0){
 		//determine_pipe_in_or_file_in
 		if(pipe_in_fd[0] > 0 && infile == NULL){//input is pipe_in
 			if(dup2(pipe_in_fd[0], 0) < 0){
-				err_dump("dup pipe_in_fd[0] error");
+				err_dump_sock(sockfd, "dup pipe_in_fd[0] error");
 			}
 			pipe_in_fd[0] = 0;
 			if(close(pipe_in_fd[1]) < 0){
-				err_dump("close error");
+				err_dump_sock(sockfd, "close error");
 			}
 		}else if(pipe_in_fd[0] == 0 && infile != NULL){//input is file
 			refd_in = open(infile, O_RDONLY);
 			if(refd_in < 0){
-				err_dump("open infile error");
+				err_dump_sock(sockfd, "open infile error");
 			}
 			if(dup2(refd_in, 0) < 0){
-				err_dump("dup refd_in error");
+				err_dump_sock(sockfd, "dup refd_in error");
 			}
 			refd_in = 0;
 		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
-			err_dump("pipe_in while has input file");
+			err_dump_sock(sockfd, "pipe_in while has input file");
 		}
 		//only file_out could happen
 		if(outfile != NULL){
 			refd_out = open(outfile, O_WRONLY | O_CREAT, 0666);
 			if(refd_out < 0){
-				err_dump("open outfile error");
+				err_dump_sock(sockfd, "open outfile error");
 			}
 			if(dup2(refd_out, 1) < 0){
-				err_dump("dup refd_out error");
+				err_dump_sock(sockfd, "dup refd_out error");
 			}
 		}else if(outfile == NULL){
-			dup2(fd, 1);
+			dup2(sockfd, 1);
 		}
 		execvp(arg[0], arg);
-		err_dump("execvp failed");
+		err_dump_sock(sockfd, "execvp failed");
 	}else if(*pid < 0){
-		err_dump("fork error");
+		err_dump_sock(sockfd, "fork error");
 	}
 }
-void my_execvp_cmd(int *pid, int i){
+void my_execvp_cmd(int sockfd, int *pid, int i){
 	int refd_in_cmd = 0;
 	//child
 	if((*pid = fork()) == 0){
@@ -473,47 +520,47 @@ void my_execvp_cmd(int *pid, int i){
 		if(command[i].infile != NULL && command[i].pipe_in_fd[0] == 0){//infile
 			refd_in_cmd = open(command[i].infile, O_RDONLY);
 			if(refd_in_cmd < 0){
-				err_dump("open error");
+				err_dump_sock(sockfd, "open error");
 			}
 			if(dup2(refd_in_cmd, 0) < 0){
-				err_dump("dup2 refd_in_cmd error");
+				err_dump_sock(sockfd, "dup2 refd_in_cmd error");
 			}
 			refd_in_cmd = 0;
 		}else if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
 			if(dup2(command[i].pipe_in_fd[0], 0) < 0){
-				err_dump("dup error");
+				err_dump_sock(sockfd, "dup error");
 			}
 			if(close(command[i].pipe_in_fd[1]) < 0){
-				err_dump("close error");
+				err_dump_sock(sockfd, "close error");
 			}
 		}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] > 0){
-			err_dump("inputfile while pipe_in");
+			err_dump_sock(sockfd, "inputfile while pipe_in");
 		}
 		//must pipe out
 		if(dup2(command[i].pipe_out_fd[1], 1) < 0){
-			err_dump("dup error");
+			err_dump_sock(sockfd, "dup error");
 		}
 		if(command[i].pipe_out_fd[0] > 0){
 			if(close(command[i].pipe_in_fd[0]) < 0){
-				err_dump("close pipe_in_fd[0] error");
+				err_dump_sock(sockfd, "close pipe_in_fd[0] error");
 			}
 			command[i].pipe_in_fd[0] = 0;
 		}
 		//execute
 		execvp(command[i].arg[0], command[i].arg);
-		err_dump("execvp failed");
+		err_dump_sock(sockfd, "execvp failed");
 	}else if(*pid < 0){
-		err_dump("fork error");
+		err_dump_sock(sockfd, "fork error");
 	}
 }
-void pipe_out_pipe_in(int *pipe_out_fd, int *pipe_in_fd){
+void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd){
 	//pipe to real command
 	if(pipe_in_fd[0] == 0 && pipe(pipe_in_fd) < 0){
-		err_dump("pipe_in_fd error");
+		err_dump_sock(sockfd, "pipe_in_fd error");
 	}
 	//pipe to self pipe_out_fd
 	if(pipe(pipe_out_fd) < 0){
-		err_dump("pipe_out_fd error");
+		err_dump_sock(sockfd, "pipe_out_fd error");
 	}
 }
 void initial_command_refd_pipe_fd(int commandcount){
@@ -538,16 +585,16 @@ void initial_command_count(struct numbered_pipe_command *command, char* buff){
 		command -> count = atoi(pipe_num_str);
 	}
 }
-void close_pipe_in_fd(int *pipe_in_fd){
+void close_pipe_in_fd(int sockfd, int *pipe_in_fd){
 	if(pipe_in_fd[0] > 0){
 		if(close(pipe_in_fd[0]) < 0){
-			err_dump("close pipe_in_fd[0] error");
+			err_dump_sock(sockfd, "close pipe_in_fd[0] error");
 		}
 		pipe_in_fd[0] = 0;
 	}
 	if(pipe_in_fd[1] > 0){
 		if(close(pipe_in_fd[1]) < 0){
-			err_dump("close pipe_in_fd[1] error");
+			err_dump_sock(sockfd, "close pipe_in_fd[1] error");
 		}
 		pipe_in_fd[1] = 0;
 	}
@@ -577,32 +624,6 @@ void free_command(int idx , int *commandcount){
 	command[cmdcount].pipe_out_fd[1] = 0;
 	(*commandcount)--;
 }
-void redirection(char *file, char *buff, int *refd, int io){
-	if(file != NULL){
-		err_dump("mutiple input file");
-	}
-	if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
-		err_dump("no filename");
-	}
-	file = malloc((strlen(buff) + 1) * sizeof(char));
-	strcpy(file, buff);
-	//if(io == 0){
-	//	*refd = open(buff, O_RDONLY);
-	//}else if(io == 1){
-	//	*refd = open(buff, O_WRONLY | O_CREAT, 0666);
-	//}else{
-	//	err_dump("redirection 4th argument error");
-	//}
-	//if(*refd < 0){
-	//	err_dump("open error");
-	//}
-}
-void close_pipe(int count){
-	if(pipefd[count][0] > 0 && close(pipefd[count][0]) < 0) err_dump("close error");
-	if(pipefd[count][1] > 0 && close(pipefd[count][1]) < 0) err_dump("close error");
-	pipefd[count][0] = 0;
-	pipefd[count][1] = 0;
-}
 int checkarg(char* str, char* delim, int len){
 	char tempstr[len + 1];
 	memset(tempstr, 0, sizeof(tempstr));
@@ -621,19 +642,12 @@ int checkarg(char* str, char* delim, int len){
 	}
 	return n;
 }
-void mysetenv(char* name, char* value, int replace){
-	if(setenv(name, value, replace) == 0){
-		printf("change env succeeded!!\n");
-	}else{
-		printf("change env failed\n");
-	}
-	return;
-}
-void myprintenv(){
+void myprintenv(int sockfd){
 	int i;
 	extern char **environ;
-	for(i= 0 ; environ[i]!= NULL ; i++){
-		printf("%s\n", environ[i]);
+	for(i= 0 ; environ[i] != NULL ; i++){
+		write(sockfd, environ[i], (strlen(environ[i]) + 1) * sizeof(char));
+		write(sockfd, "\n", (strlen("\n") + 1) * sizeof(char));
 	}
 	return;
 }
