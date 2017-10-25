@@ -1,26 +1,8 @@
 #define MAXLENG	10000
 #define MAXSIZE 10001
-const char WELCOME_MESSAGE[] =	"**************************************************************\n"
-				"** Welcome to the information server, myserver.nctu.edu.tw. **\n"
-				"**************************************************************\n"
-				"** You are in the directory, /home/studentA/ras/.\n"
-				"** This directory will be under \"/\", in this system.\n"
-				"** This directory includes the following executable programs.\n"
-				"** \n"
-				"**	bin/\n"
-				"**	test.html	(test file)\n"
-				"**\n"
-				"** The directory bin/ includes:\n"
-				"**	cat\n"
-				"**	ls\n"
-				"**	removetag		(Remove HTML tags.)\n"
-				"**	removetag0		(Remove HTML tags with error message.)\n"
-				"**	number			(Add a number in each line.)\n"
-				"**\n"
-				"** In addition, the following two commands are supported by ras. \n"
-				"**	setenv\n"
-				"**	printenv\n"
-				"**\n";
+const char WELCOME_MESSAGE[] =	"****************************************\n"
+				"** Welcome to the information server. **\n"
+				"****************************************\n";
 
 #define SERV_TCP_PORT 5055
 #include<stdio.h>
@@ -52,7 +34,7 @@ int  err_dump_sock(int sockfd, char* msg);
 int  err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2);
 void process_request(int sockfd);
 int  parser(int sockfd, char* line, int len);
-void free_command(int idx , int *commandcount);
+void free_command(int sockfd, int idx , int *commandcount);
 void close_pipe_in_fd(int sockfd, int *pipe_in_fd);
 void initial_command_count(struct numbered_pipe_command *command, char* buff);
 void initial_command_refd_pipe_fd(int commandcount);
@@ -119,14 +101,16 @@ int err_dump_sock(int sockfd, char* msg){
 }
 int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	char* result = NULL;
-	dup2(sockfd, 2);
-	int size = (strlen(msg) + strlen(v) + strlen(msg2) + 1) * sizeof(char);
+	int size = (strlen(msg) + strlen(v) + strlen(msg2) + 2) * sizeof(char);
 	result = malloc(size);
 	memset(result, 0, size);
 	strcpy(result, msg);
 	strcat(result, v);
 	strcat(result, msg2);
-	perror(result);
+	//dup2(sockfd, 2);
+	strcat(result, "\n");
+	write(sockfd, result, size - 1);
+	//fprintf(stderr,result);
 	return 1;
 }
 void process_request(int sockfd){
@@ -134,19 +118,6 @@ void process_request(int sockfd){
 	//int fill_back_flag = 0;
 	int enterflag = 0;
 	char line[MAXSIZE];
-	char *PATH = getenv("PATH");
-	char my_PATH[256];
-	char *buff;
-	i=0;
-	strcpy(my_PATH, PATH);
-	buff = strtok(my_PATH, ":");
-	while(buff != NULL)
-	{
-		pathes[i] = malloc((strlen(buff) + 1) * sizeof(char));
-		strcpy(pathes[i++], buff);
-		buff = strtok(NULL, ":");
-	}
-	pathes[i] = NULL;
 
 	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 	while(1)
@@ -168,7 +139,7 @@ void process_request(int sockfd){
 					break;
 				}
 			}
-			//test command is built-in or not
+			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
 			if(build_in_or_command(sockfd, line, i) == 1){
 				return;
 			}
@@ -187,25 +158,32 @@ void process_request(int sockfd){
 		}
 	}
 }
-int  build_in_or_command(int sockfd, char* line, int len){
+int build_in_or_command(int sockfd, char* line, int len){
 	if(strncmp(line, "exit", 4) == 0){//exit
 		return 1;
 	}else if(strncmp(line, "printenv", 8) == 0){
 		//printenv
 		char tmp_line[MAXSIZE];
 		char* vname;
+		int wc = 0;
 		strcpy(tmp_line, line);
 		vname = strtok(tmp_line, " ");
 		vname = strtok(NULL, " ");//name
 		if(vname == NULL){//no arg
 			myprintenv(sockfd);
-		}else{
+		}else{//has arg
 			char* vvalue = getenv(vname);
 			if(vvalue == NULL){
-				write(sockfd, "There is no match", (strlen("There is no match") + 1) * sizeof(char));
+				write(sockfd, "There is no match", (strlen("There is no match")) * sizeof(char));
 			}else{
-				write(sockfd, vvalue, (strlen(vvalue) + 1) * sizeof(char));
-				write(sockfd, "\n", (strlen("\n") + 1) * sizeof(char));
+				wc = write(sockfd, vvalue, (strlen(vvalue)) * sizeof(char));
+				if(wc < 0){
+					err_dump_sock(sockfd, "write error");
+				}
+				wc = write(sockfd, "\n", 1);
+				if(wc < 0){
+					err_dump_sock(sockfd, "write error");
+				}
 			}
 		}
 	}else if(strncmp(line, "setenv", 6) == 0){
@@ -218,15 +196,15 @@ int  build_in_or_command(int sockfd, char* line, int len){
 		vname = strtok(NULL, " ");
 		//usage error
 		if(vname == NULL){
-			write(sockfd, "no variable name", (strlen("no variable name") + 1) * sizeof(char));
+			write(sockfd, "no variable name", (strlen("no variable name")) * sizeof(char));
 		}
 		//value
 		vvalue = strtok(NULL, " ");
 		if(vvalue == NULL){// no value
-			write(sockfd, "no value", (strlen("no value") + 1) * sizeof(char));
+			write(sockfd, "no value", (strlen("no value")) * sizeof(char));
 		}else{// has value
 			if(setenv(vname, vvalue, 1) != 0){//failed
-				write(sockfd, "change failed", (strlen("change failed") + 1) * sizeof(char));
+				write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
 			}
 		}
 	}else{
@@ -244,6 +222,21 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int i;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
+	char *PATH = getenv("PATH");
+	//get PATH
+	char my_PATH[256];
+	char *pbuff;
+	i=0;
+	strcpy(my_PATH, PATH);
+	pbuff = strtok(my_PATH, ":");
+	while(pbuff != NULL)
+	{
+		pathes[i] = malloc((strlen(pbuff) + 1) * sizeof(char));
+		strcpy(pathes[i++], pbuff);
+		pbuff = strtok(NULL, ":");
+	}
+	pathes[i] = NULL;
+
 	buff = strtok(line, " ");
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
@@ -266,10 +259,10 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	if(passflag == 0){
 		for(i = 0 ; i < cmdcount ; i++){
 			if(++command[i].idx == command[i].count){
-				free_command(i, &cmdcount);
+				free_command(sockfd, i, &cmdcount);
 			}
 		}
-		return err_dump_sock(sockfd, "Command not found");
+		return err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
 	}
 
 	//if(buff[0] == '|'){//pipe occur!! weird!!
@@ -298,7 +291,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 					read_in_write_out(sockfd, command[i].pipe_out_fd[0], pipe_in_fd[1]);
 					//close out
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
-					free_command(i, &cmdcount);
+					free_command(sockfd, i, &cmdcount);
 					//because of filling back
 					i--;
 				}
@@ -373,7 +366,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				if(command[i].idx == command[i].count){
 					read_in_write_out(sockfd, command[i].pipe_out_fd[0], command[cmdcount - 1].pipe_in_fd[1]);
 					//won't close command[i].pipe_out_fd[1], cause it should already be closed
-					free_command(i, &cmdcount);
+					free_command(sockfd, i, &cmdcount);
 					//because of filling back
 					i--;
 				}
@@ -421,7 +414,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 					}
 				}
 				if(passflag == 0){//only one invalid command in one line
-					return err_dump_sock(sockfd, "Command not found");
+					return err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
 					break;
 				}
 			}
@@ -599,10 +592,13 @@ void close_pipe_in_fd(int sockfd, int *pipe_in_fd){
 		pipe_in_fd[1] = 0;
 	}
 }
-void free_command(int idx , int *commandcount){
+void free_command(int sockfd, int idx , int *commandcount){
 	int i;
 	for(i = 0 ; command[idx].arg[i] != NULL ; i++){
 		free(command[idx].arg[i]);
+	}
+	if(command[idx].pipe_out_fd[0] > 0 && close(command[idx].pipe_out_fd[0]) < 0){
+		err_dump_sock(sockfd, "close pipe_in_fd[1] error");
 	}
 	//free(command[idx].outfile);
 	free(command[idx].infile);
@@ -646,8 +642,8 @@ void myprintenv(int sockfd){
 	int i;
 	extern char **environ;
 	for(i= 0 ; environ[i] != NULL ; i++){
-		write(sockfd, environ[i], (strlen(environ[i]) + 1) * sizeof(char));
-		write(sockfd, "\n", (strlen("\n") + 1) * sizeof(char));
+		write(sockfd, environ[i], (strlen(environ[i])) * sizeof(char));
+		write(sockfd, "\n", (strlen("\n")) * sizeof(char));
 	}
 	return;
 }
