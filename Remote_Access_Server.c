@@ -176,11 +176,14 @@ int build_in_or_command(int sockfd, char* line, int len){
 			if(vvalue == NULL){
 				write(sockfd, "There is no match", (strlen("There is no match")) * sizeof(char));
 			}else{
-				wc = write(sockfd, vvalue, (strlen(vvalue)) * sizeof(char));
-				if(wc < 0){
-					err_dump_sock(sockfd, "write error");
-				}
-				wc = write(sockfd, "\n", 1);
+				char* writestr;
+				writestr = malloc((strlen(vname) + strlen("=") + strlen(vvalue) + strlen("\n") + 1) * sizeof(char));
+				strcpy(writestr, vname);
+				strcat(writestr, "=");
+				strcat(writestr, vvalue);
+				strcat(writestr, "\n");
+				wc = write(sockfd, writestr, (strlen(writestr)) * sizeof(char));
+				free(writestr);
 				if(wc < 0){
 					err_dump_sock(sockfd, "write error");
 				}
