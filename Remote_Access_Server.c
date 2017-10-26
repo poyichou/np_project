@@ -34,10 +34,9 @@ void free_command(int sockfd, int idx , int *commandcount);
 void close_pipe_in_fd(int sockfd, int *pipe_in_fd);
 void initial_command_count(struct numbered_pipe_command *command, char* buff);
 void initial_command_refd_pipe_fd(int commandcount);
-void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd);
 void mypipe(int sockfd, int *pipe_fd);
-void my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]);
-void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]);
+int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]);
+int  my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]);
 void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
 void read_in_write_out(int sockfd, int out_fd, int in_fd);
 int  build_in_or_command(int sockfd, char* line, int len);
@@ -104,10 +103,8 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	strcpy(result, msg);
 	strcat(result, v);
 	strcat(result, msg2);
-	//dup2(sockfd, 2);
 	strcat(result, "\n");
 	write(sockfd, result, size - 1);
-	//fprintf(stderr,result);
 	return 1;
 }
 void process_request(int sockfd){
@@ -115,16 +112,23 @@ void process_request(int sockfd){
 	//int fill_back_flag = 0;
 	int enterflag = 0;
 	char line[MAXSIZE];
+	int read_end_flag = 0;
+	int linecount = 0;
 
 	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 	while(1)
 	{
+		linecount++;
 		enterflag = 0;
 		write(sockfd, "% ", 2);
-		rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
+		if(read_end_flag == 0){
+			rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
+		}
 		if(rc < 0){
 			err_dump_sock(sockfd, "readline:read error\n");
-		}else if(rc == 0 && line_offset == 0){//finished
+		}else if(rc == 0){
+			read_end_flag = 1;
+		}else if(read_end_flag == 1 && line_offset == 0){//finished
 			exit(0);
 		}else{
 			//may contain not one command
@@ -138,7 +142,7 @@ void process_request(int sockfd){
 			}
 			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
 			if(build_in_or_command(sockfd, line, i) == 1){
-				return;
+				exit(0);
 			}
 			if(i < rc + line_offset){//contain more than one command
 				//clear
@@ -220,6 +224,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int argcount = 0;
 	char *arg[checkarg(line, " ", len)];
 	int i;
+	int exec_result = 0;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
 	char *PATH = getenv("PATH");
@@ -241,33 +246,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
 	arg[argcount] = NULL;
-	//test if it is valid
-	char tmp_path[256];
-	int passflag = 0;
-	for(i = 0 ; pathes[i] != NULL ; i++){
-		tmp_path[0] = '\0';
-		strcpy(tmp_path, pathes[i]);
-		strcat(tmp_path, "/");
-		strcat(tmp_path, buff);
-		//printf("%s", tmp_path);
-		if(access(tmp_path, X_OK) == 0){
-			passflag = 1;
-			break;
-		}
-	}
-	//only one invalid command in one line
-	if(passflag == 0){
-		for(i = 0 ; i < cmdcount ; i++){
-			if(++command[i].idx == command[i].count){
-				free_command(sockfd, i, &cmdcount);
-			}
-		}
-		return err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
-	}
-
-	//if(buff[0] == '|'){//pipe occur!! weird!!
-	//	err_dump("parser:first token is |");
-	//}
 	while(1)//not cmd: > < |n |
 	{
 		buff = strtok(NULL, " ");
@@ -344,7 +322,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				}
 			}
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
-			my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg);
+			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg);
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
@@ -355,6 +333,9 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			}
 			argcount = 0;
 			while ((wpid = wait(&status)) > 0);
+			if(exec_result == 1){
+				break;
+			}
 
 		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount == 0){
 			return err_dump_sock(sockfd, "continual pipe");
@@ -385,22 +366,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			infile = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(infile, buff);
 		}else if(buff != NULL){
-			//test if it exists
-			if(argcount == 0){
-				for(i = 0 ; pathes[i] != NULL ; i++){
-					tmp_path[0] = '\0';
-					strcpy(tmp_path, pathes[i]);
-					strcat(tmp_path, "/");
-					strcat(tmp_path, buff);
-					if(access(tmp_path, X_OK) == 0){
-						passflag = 1;
-					}
-				}
-				if(passflag == 0){//only one invalid command in one line
-					return err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
-					break;
-				}
-			}
 			arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(arg[argcount++], buff);
 			arg[argcount] = NULL;
@@ -444,7 +409,7 @@ void parent_close(int sockfd, int *pipe_in_fd, int *pipe_out_fd){
 		pipe_out_fd[1] = 0;
 	}
 }
-void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
+int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
 	int refd_in = 0, refd_out = 0;
 	//real command
 	if((*pid = fork()) == 0){
@@ -481,13 +446,17 @@ void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfil
 		}else if(outfile == NULL){
 			dup2(sockfd, 1);
 		}
+		dup2(sockfd, 2);
 		execvp(arg[0], arg);
-		err_dump_sock(sockfd, "execvp failed");
+		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
+		exit(1);
+		//err_dump_sock(sockfd, "execvp failed");
 	}else if(*pid < 0){
-		err_dump_sock(sockfd, "fork error");
+		return err_dump_sock(sockfd, "fork error");
 	}
+	return 0;
 }
-void my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
+int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 	int refd_in_cmd = 0;
 	//child
 	if((*pid = fork()) == 0){
@@ -523,26 +492,20 @@ void my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 			command[i].pipe_in_fd[0] = 0;
 		}
 		//execute
+		dup2(sockfd, 2);
 		execvp(arg[0], arg);
-		err_dump_sock(sockfd, "execvp failed");
+		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
+		exit(1);
+		//err_dump_sock(sockfd, "execvp failed");
 	}else if(*pid < 0){
-		err_dump_sock(sockfd, "fork error");
+		return err_dump_sock(sockfd, "fork error");
 	}
+	return 0;
 }
 void mypipe(int sockfd, int *pipe_fd){
 	//pipe to real command
 	if(pipe_fd[0] == 0 && pipe(pipe_fd) < 0){
 		err_dump_sock(sockfd, "pipe_in_fd error");
-	}
-}
-void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd){
-	//pipe to real command
-	if(pipe_in_fd[0] == 0 && pipe(pipe_in_fd) < 0){
-		err_dump_sock(sockfd, "pipe_in_fd error");
-	}
-	//pipe to self pipe_out_fd
-	if(pipe(pipe_out_fd) < 0){
-		err_dump_sock(sockfd, "pipe_out_fd error");
 	}
 }
 void initial_command_refd_pipe_fd(int commandcount){
