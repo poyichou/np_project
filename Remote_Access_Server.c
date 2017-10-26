@@ -18,10 +18,6 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 struct numbered_pipe_command{
 	int idx;
 	int count;
-	char* arg[1000];
-	char* infile;
-	int refd_in;
-	int refd_out;
 	int pipe_out_fd[2];
 	int pipe_in_fd[2];
 };
@@ -39,7 +35,8 @@ void close_pipe_in_fd(int sockfd, int *pipe_in_fd);
 void initial_command_count(struct numbered_pipe_command *command, char* buff);
 void initial_command_refd_pipe_fd(int commandcount);
 void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd);
-void my_execvp_cmd(int sockfd, int *pid, int i);
+void mypipe(int sockfd, int *pipe_fd);
+void my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]);
 void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]);
 void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
 void read_in_write_out(int sockfd, int out_fd, int in_fd);
@@ -280,11 +277,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					pipe_out_pipe_in(sockfd, command[i].pipe_out_fd, pipe_in_fd);
-					//child
-					my_execvp_cmd(sockfd, &pid, i);
-					//parent
-					parent_close(sockfd, command[i].pipe_in_fd, command[i].pipe_out_fd);
+					mypipe(sockfd, pipe_in_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
@@ -328,26 +321,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			command[cmdcount].idx = 0;
 			//initial_command_count
 			initial_command_count(&command[cmdcount], buff);
-			for(i = 0 ; i < argcount ; i++){
-				command[cmdcount].arg[i] = malloc((strlen(arg[i]) + 1) * sizeof(char));
-				strcpy(command[cmdcount].arg[i], arg[i]);
-				free(arg[i]);
-				arg[i] = NULL;
-			}
-			command[cmdcount].arg[i] = NULL;
-			argcount = 0;
-			//initial_command_file
-			if(outfile != NULL){
-				free(outfile);
-				outfile = NULL;
-				return err_dump_sock(sockfd, "pipe out while has output file");
-			}
-			if(infile != NULL){
-				command[cmdcount].infile = malloc((strlen(infile) + 1) * sizeof(char));
-				strcpy(command[cmdcount].infile, infile);
-				free(infile);
-				infile = NULL;
-			}
 			initial_command_refd_pipe_fd(cmdcount);
 			//put it here to avoid idx++ of this command
 			cmdcount++;
@@ -356,11 +329,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				command[i].idx++;
 				//execute it first
 				if(command[i].idx == command[i].count){
-					pipe_out_pipe_in(sockfd, command[i].pipe_out_fd, command[cmdcount - 1].pipe_in_fd);
-					//child
-					my_execvp_cmd(sockfd, &pid, i);
-					//parent
-					parent_close(sockfd, command[i].pipe_in_fd, command[i].pipe_out_fd);
+					mypipe(sockfd, command[cmdcount - 1].pipe_in_fd);
 				}
 			}
 			// check if there's a pipe_in to this cmd // already execute
@@ -374,6 +343,17 @@ int parser(int sockfd, char* line, int len){//it also call exec
 					i--;
 				}
 			}
+			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
+			my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg);
+			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
+			free(infile);
+			infile = NULL;
+			//free arg
+			for(i = 0 ; i < argcount ; i++){
+				free(arg[i]);
+				arg[i] = NULL;
+			}
+			argcount = 0;
 			while ((wpid = wait(&status)) > 0);
 
 		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount == 0){
@@ -507,14 +487,14 @@ void my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfil
 		err_dump_sock(sockfd, "fork error");
 	}
 }
-void my_execvp_cmd(int sockfd, int *pid, int i){
+void my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 	int refd_in_cmd = 0;
 	//child
 	if((*pid = fork()) == 0){
 		//open file //outfile doesn't exist
 		//won't happen while pipe_in exists
-		if(command[i].infile != NULL && command[i].pipe_in_fd[0] == 0){//infile
-			refd_in_cmd = open(command[i].infile, O_RDONLY);
+		if(infile != NULL && command[i].pipe_in_fd[0] == 0){//infile
+			refd_in_cmd = open(infile, O_RDONLY);
 			if(refd_in_cmd < 0){
 				err_dump_sock(sockfd, "open error");
 			}
@@ -522,14 +502,14 @@ void my_execvp_cmd(int sockfd, int *pid, int i){
 				err_dump_sock(sockfd, "dup2 refd_in_cmd error");
 			}
 			refd_in_cmd = 0;
-		}else if(command[i].infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
+		}else if(infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
 			if(dup2(command[i].pipe_in_fd[0], 0) < 0){
 				err_dump_sock(sockfd, "dup error");
 			}
 			if(close(command[i].pipe_in_fd[1]) < 0){
 				err_dump_sock(sockfd, "close error");
 			}
-		}else if(command[i].infile != NULL && command[i].pipe_in_fd[0] > 0){
+		}else if(infile != NULL && command[i].pipe_in_fd[0] > 0){
 			err_dump_sock(sockfd, "inputfile while pipe_in");
 		}
 		//must pipe out
@@ -543,10 +523,16 @@ void my_execvp_cmd(int sockfd, int *pid, int i){
 			command[i].pipe_in_fd[0] = 0;
 		}
 		//execute
-		execvp(command[i].arg[0], command[i].arg);
+		execvp(arg[0], arg);
 		err_dump_sock(sockfd, "execvp failed");
 	}else if(*pid < 0){
 		err_dump_sock(sockfd, "fork error");
+	}
+}
+void mypipe(int sockfd, int *pipe_fd){
+	//pipe to real command
+	if(pipe_fd[0] == 0 && pipe(pipe_fd) < 0){
+		err_dump_sock(sockfd, "pipe_in_fd error");
 	}
 }
 void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd){
@@ -560,8 +546,6 @@ void pipe_out_pipe_in(int sockfd, int *pipe_out_fd, int *pipe_in_fd){
 	}
 }
 void initial_command_refd_pipe_fd(int commandcount){
-	command[commandcount].refd_in = 0;
-	command[commandcount].refd_out = 0;
 	command[commandcount].pipe_in_fd[0] = 0;
 	command[commandcount].pipe_in_fd[1] = 0;
 	command[commandcount].pipe_out_fd[0] = 0;
@@ -597,14 +581,10 @@ void close_pipe_in_fd(int sockfd, int *pipe_in_fd){
 }
 void free_command(int sockfd, int idx , int *commandcount){
 	int i;
-	for(i = 0 ; command[idx].arg[i] != NULL ; i++){
-		free(command[idx].arg[i]);
-	}
 	if(command[idx].pipe_out_fd[0] > 0 && close(command[idx].pipe_out_fd[0]) < 0){
 		err_dump_sock(sockfd, "close pipe_in_fd[1] error");
 	}
 	//free(command[idx].outfile);
-	free(command[idx].infile);
 	//fill back
 	for(i = idx ; i < *commandcount - 1 ; i++){
 		command[i] = command[i + 1];
@@ -612,11 +592,7 @@ void free_command(int sockfd, int idx , int *commandcount){
 	//reset final one
 	command[i].idx = 0;
 	command[i].count = 0;
-	for(i = 0 ; command[i].arg[i] != NULL ; i++){
-		command[cmdcount].arg[i] = NULL;
-	}
 	//command[cmdcount].outfile = NULL;
-	command[cmdcount].infile = NULL;
 	command[cmdcount].pipe_in_fd[0] = 0;
 	command[cmdcount].pipe_in_fd[1] = 0;
 	command[cmdcount].pipe_out_fd[0] = 0;
