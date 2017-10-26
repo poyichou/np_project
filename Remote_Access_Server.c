@@ -227,20 +227,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int exec_result = 0;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
-	char *PATH = getenv("PATH");
-	//get PATH
-	char my_PATH[256];
-	char *pbuff;
-	i=0;
-	strcpy(my_PATH, PATH);
-	pbuff = strtok(my_PATH, ":");
-	while(pbuff != NULL)
-	{
-		pathes[i] = malloc((strlen(pbuff) + 1) * sizeof(char));
-		strcpy(pathes[i++], pbuff);
-		pbuff = strtok(NULL, ":");
-	}
-	pathes[i] = NULL;
 
 	buff = strtok(line, " ");
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
@@ -419,7 +405,7 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 				err_dump_sock(sockfd, "dup pipe_in_fd[0] error");
 			}
 			pipe_in_fd[0] = 0;
-			if(close(pipe_in_fd[1]) < 0){
+			if(pipe_in_fd[1] > 0 && close(pipe_in_fd[1]) < 0){
 				err_dump_sock(sockfd, "close error");
 			}
 		}else if(pipe_in_fd[0] == 0 && infile != NULL){//input is file
@@ -470,12 +456,13 @@ int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 			if(dup2(refd_in_cmd, 0) < 0){
 				err_dump_sock(sockfd, "dup2 refd_in_cmd error");
 			}
+			close(refd_in_cmd);
 			refd_in_cmd = 0;
 		}else if(infile == NULL && command[i].pipe_in_fd[0] > 0){//pipe_in, then dup
 			if(dup2(command[i].pipe_in_fd[0], 0) < 0){
 				err_dump_sock(sockfd, "dup error");
 			}
-			if(close(command[i].pipe_in_fd[1]) < 0){
+			if(command[i].pipe_in_fd[1] > 0 && close(command[i].pipe_in_fd[1]) < 0){
 				err_dump_sock(sockfd, "close error");
 			}
 		}else if(infile != NULL && command[i].pipe_in_fd[0] > 0){
@@ -485,7 +472,7 @@ int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 		if(dup2(command[i].pipe_out_fd[1], 1) < 0){
 			err_dump_sock(sockfd, "dup error");
 		}
-		if(command[i].pipe_out_fd[0] > 0){
+		if(command[i].pipe_in_fd[0] > 0){
 			if(close(command[i].pipe_in_fd[0]) < 0){
 				err_dump_sock(sockfd, "close pipe_in_fd[0] error");
 			}
