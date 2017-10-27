@@ -162,7 +162,10 @@ void process_request(int sockfd){
 	}
 }
 int build_in_or_command(int sockfd, char* line, int len){
-	if(strncmp(line, "exit", 4) == 0){//exit
+	if (strcmp(line, "/") == 0){
+		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
+		return 0;
+	}else if(strncmp(line, "exit", 4) == 0){//exit
 		return 1;
 	}else if(strncmp(line, "printenv", 8) == 0){
 		//printenv
