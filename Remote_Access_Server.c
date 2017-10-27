@@ -40,6 +40,8 @@ int  my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfil
 void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
 void read_in_write_out(int sockfd, int out_fd, int in_fd);
 int  build_in_or_command(int sockfd, char* line, int len);
+void read_timed_command(int sockfd, int *pipe_in_fd, int *cmdcount, int offset);
+void free_arg(char *arg[], int *argcount);
 
 int pipefd[1000][2];
 int pipe_flag = 0;
@@ -223,7 +225,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int status = 0;
 	int argcount = 0;
 	char *arg[checkarg(line, " ", len)];
-	int i;
 	int exec_result = 0;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
@@ -236,35 +237,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	{
 		buff = strtok(NULL, " ");
 		if(buff == NULL && argcount > 0){// with pipe before or not, aka "...... | cmd" or "cmd"//no more pipe!!
-			//check if numbered pipe should be execute
-			for(i = 0 ; i < cmdcount ; i++){
-				command[i].idx++;
-				//execute it first
-				if(command[i].idx == command[i].count){
-					mypipe(sockfd, pipe_in_fd);
-				}
-			}
-			// check if there's a pipe_in to this cmd // already execute
-			for(i = 0 ; i < cmdcount ; i++){
-				// there's a pipe_in to this cmd // already execute
-				if(command[i].idx == command[i].count){
-					read_in_write_out(sockfd, command[i].pipe_out_fd[0], pipe_in_fd[1]);
-					//close out
-					//won't close command[i].pipe_out_fd[1], cause it should already be closed
-					free_command(sockfd, i, &cmdcount);
-					//because of filling back
-					i--;
-				}
-			}
+			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
 			//real command
 			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg);
 			//parent
-			//free arg
-			for(i = 0 ; i < argcount ; i++){
-				free(arg[i]);
-				arg[i] = NULL;
-			}
-			argcount = 0;
+			free_arg(arg, &argcount);
 			//free file
 			if(infile != NULL){
 				free(infile);
@@ -288,36 +265,13 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			initial_command_refd_pipe_fd(cmdcount);
 			//put it here to avoid idx++ of this command
 			cmdcount++;
-			//check if numbered pipe should be execute
-			for(i = 0 ; i < cmdcount - 1 ; i++){
-				command[i].idx++;
-				//execute it first
-				if(command[i].idx == command[i].count){
-					mypipe(sockfd, command[cmdcount - 1].pipe_in_fd);
-				}
-			}
-			// check if there's a pipe_in to this cmd // already execute
-			for(i = 0 ; i < cmdcount - 1 ; i++){
-				// there's a pipe_in to this cmd // already execute
-				if(command[i].idx == command[i].count){
-					read_in_write_out(sockfd, command[i].pipe_out_fd[0], command[cmdcount - 1].pipe_in_fd[1]);
-					//won't close command[i].pipe_out_fd[1], cause it should already be closed
-					free_command(sockfd, i, &cmdcount);
-					//because of filling back
-					i--;
-				}
-			}
+			read_timed_command(sockfd, command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
 			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg);
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
-			//free arg
-			for(i = 0 ; i < argcount ; i++){
-				free(arg[i]);
-				arg[i] = NULL;
-			}
-			argcount = 0;
+			free_arg(arg, &argcount);
 			while ((wpid = wait(&status)) > 0);
 			if(exec_result == 1){
 				break;
@@ -331,6 +285,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//copy filename
 			if(outfile != NULL){
 				free(outfile);
+				outfile = NULL;
 				return err_dump_sock(sockfd, "mutiple output file");
 			}
 			if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
@@ -344,7 +299,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			if(infile != NULL){
 				free(infile);
 				infile = NULL;
-				return err_dump_sock(sockfd, "mutiple input file");
+				return err_dump_sock(sockfd, "mutiple output file");
 			}
 			if(buff == NULL || buff[0] == '|' || buff[0] == '<' || buff[0] == '>'){
 				return err_dump_sock(sockfd, "no filename");
@@ -358,6 +313,37 @@ int parser(int sockfd, char* line, int len){//it also call exec
 		}
 	}
 	return 0;
+}
+void free_arg(char *arg[], int *argcount){
+	int i;
+	for(i = 0 ; i < *argcount ; i++){
+		free(arg[i]);
+		arg[i] = NULL;
+	}
+	*argcount = 0;
+}
+void read_timed_command(int sockfd, int *pipe_in_fd, int *cmdcount, int offset){
+	int i;
+	//check if numbered pipe should be execute
+	for(i = 0 ; i < *cmdcount - offset ; i++){
+		command[i].idx++;
+		//execute it first
+		if(command[i].idx == command[i].count){
+			mypipe(sockfd, pipe_in_fd);
+		}
+	}
+	// check if there's a pipe_in to this cmd // already execute
+	for(i = 0 ; i < *cmdcount - offset ; i++){
+		// there's a pipe_in to this cmd // already execute
+		if(command[i].idx == command[i].count){
+			read_in_write_out(sockfd, command[i].pipe_out_fd[0], pipe_in_fd[1]);
+			//close out
+			//won't close command[i].pipe_out_fd[1], cause it should already be closed
+			free_command(sockfd, i, cmdcount);
+			//because of filling back
+			i--;
+		}
+	}
 }
 void read_in_write_out(int sockfd, int out_fd, int in_fd){
 	int rc = 0, wc = 0;
@@ -422,7 +408,7 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 		}
 		//only file_out could happen
 		if(outfile != NULL){
-			refd_out = open(outfile, O_WRONLY | O_CREAT, 0666);
+			refd_out = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 			if(refd_out < 0){
 				err_dump_sock(sockfd, "open outfile error");
 			}
