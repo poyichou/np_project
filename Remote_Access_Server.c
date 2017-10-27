@@ -281,7 +281,18 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			}
 
 		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount == 0){
-			return err_dump_sock(sockfd, "continual pipe");
+			int i;
+			//check if numbered pipe should be execute
+			for(i = 0 ; i < cmdcount ; i++){
+				command[i].idx++;
+				// there's a pipe_in to this cmd // already execute
+				if(command[i].idx == command[i].count){
+					free_command(sockfd, i, &cmdcount);
+					//because of filling back
+					i--;
+				}
+			}
+			//return err_dump_sock(sockfd, "continual pipe");
 		}
 		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename
