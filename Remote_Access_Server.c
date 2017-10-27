@@ -110,19 +110,25 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	return 1;
 }
 void process_request(int sockfd){
+	//deal with 3 case: 
+	//		1.	aaaaaaaaa\r\n
+	//		2.	aaaaaaaaa\r\nbbbbbbbbbb
+	//		3.	aaaaaaaaaa
+	//			aa\r\n
 	int rc, i, j, line_offset = 0;
 	//int fill_back_flag = 0;
 	int enterflag = 0;
 	char line[MAXSIZE];
 	int read_end_flag = 0;
-	int linecount = 0;
 
 	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
+	write(sockfd, "% ", 2);
 	while(1)
 	{
-		linecount++;
+		if(enterflag == 1){
+			write(sockfd, "% ", 2);
+		}
 		enterflag = 0;
-		write(sockfd, "% ", 2);
 		if(read_end_flag == 0){
 			rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
 		}
@@ -142,6 +148,10 @@ void process_request(int sockfd){
 					break;
 				}
 			}
+			if(enterflag == 0){
+				line_offset += rc;
+				continue;
+			}
 			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
 			if(build_in_or_command(sockfd, line, i) == 1){
 				exit(0);
@@ -157,6 +167,9 @@ void process_request(int sockfd){
 					line[j + i] = '\0';
 				}
 				line_offset = j;
+			}else if(i == rc + line_offset){//reset
+				memset(line, 0, MAXSIZE);
+				line_offset = 0;
 			}
 		}
 	}
