@@ -4,7 +4,7 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 				"** Welcome to the information server. **\n"
 				"****************************************\n";
 
-#define SERV_TCP_PORT 5055
+#define SERV_TCP_PORT 7000
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
