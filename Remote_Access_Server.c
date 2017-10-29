@@ -52,6 +52,8 @@ int main(int argc, char* argv[])
 {
 	int sockfd, newsockfd, childpid;
 	struct sockaddr_in	cli_addr, serv_addr;
+	int wpid;
+	int status = 0;
 	socklen_t clilen;
 	/*
 	 *Open a TCP socket(an Internet stream socket).
@@ -81,11 +83,17 @@ int main(int argc, char* argv[])
 		}else if(childpid == 0){/*child process*/
 			/*close original socket*/
 			close(sockfd);
-			/*process the request*/
-			process_request(newsockfd);
+			//fork twice to avoid zombie
+			if((childpid = fork()) < 0){
+				err_dump("server: fork error\n");
+			}else if(childpid == 0){/*child proccess*/
+				/*process the request*/
+				process_request(newsockfd);
+			}
 			exit(0);
 		}
 		close(newsockfd);/*parent process*/
+		while ((wpid = wait(&status)) > 0);
 	}
 }
 void err_dump(char* msg){
