@@ -25,25 +25,25 @@ It first send a welcome message to client. Then start receiving message from cli
   
 # parser:  
 ### It is like a shell, parse one line of message by whitespace into tokens, regarding them as *\"command\"*s separated by \"|\" or \"|n\" and do pipe, number pipe, exec if needed.  
-***************************************************************************************************************************************************************************************  
-*numbered pipe: A new type of pipe in this project. Having symbol such as \"|n\", where n is an integer.*  
-*\"|n\" means the stdout of last command should be piped to next nth legal process, where 1 <= N <= 1000.*  
-*\"|1\" has the same behavior of \"|\"*  
-*If there is any error in a input line, the line number still count 1. If the nth command is invalid, then the pipe just close.*  
-*For example:*  
-*	*%ls |2*  
-	*% ctt               <= unknown command, process number is counted*  
-	*Unknown command: [ctt].*  
-	*% nl*  
-	*1 file1*  
-	*2 file2*  
-*Also, it is fine that many commands pipe to the same command*  
-*	*%ls |3 ls | nl | nl*  
-	*1 file1*  
-	*2 file2*  
-	*3 1 file1*  
-	*4 2 file2*  
-***************************************************************************************************************************************************************************************  
+```  
+numbered pipe: A new type of pipe in this project. Having symbol such as \"|n\", where n is an integer.  
+"|n" means the stdout of last command should be piped to next nth legal process, where 1 <= N <= 1000.  
+"|1" has the same behavior of "|"  
+If there is any error in a input line, the line number still count 1. If the nth command is invalid, then the pipe just close.  
+For example:  
+	%ls |2  
+	% ctt               <= unknown command, process number is counted  
+	Unknown command: [ctt].  
+	% nl  
+	1 file1  
+	2 file2  
+Also, it is fine that many commands pipe to the same command  
+	%ls |3 ls | nl | nl  
+	1 file1  
+	2 file2  
+	3 1 file1  
+	4 2 file2  
+```  
 ### It catogorize tokens in to four case:  
 *	#### \">\":  
 	Means token after it is a file name should be writen. When it reach it, it read next token as output file name.   
