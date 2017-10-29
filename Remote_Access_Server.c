@@ -120,6 +120,9 @@ void process_request(int sockfd){
 	int enterflag = 0;
 	char line[MAXSIZE];
 	int read_end_flag = 0;
+	if(setenv("PATH", "bin:.", 1) != 0){//failed
+		write(sockfd, "setenv failed", (strlen("setenv failed")) * sizeof(char));
+	}
 
 	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 	write(sockfd, "% ", 2);
