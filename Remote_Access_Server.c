@@ -128,6 +128,13 @@ void process_request(int sockfd){
 	int enterflag = 0;
 	char line[MAXSIZE];
 	int read_end_flag = 0;
+	//change dir
+	if(chdir(getenv("HOME")) < 0){
+		err_dump("cd error");
+	}
+	if(chdir("ras") < 0){
+		err_dump("cd error");
+	}
 	if(setenv("PATH", "bin:.", 1) != 0){//failed
 		write(sockfd, "setenv failed", (strlen("setenv failed")) * sizeof(char));
 	}
