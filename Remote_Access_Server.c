@@ -8,9 +8,11 @@
 #include<sys/stat.h>
 #include<fcntl.h>
 #include "Remote_Access_Server.h"
+#include "Single_Process_Concurrent_Server_main.h"
 
 struct numbered_pipe_command command[1000];
 
+extern struct User user[30];
 
 int pipefd[1000][2];
 int cmdcount = 0;

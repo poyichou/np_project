@@ -15,13 +15,8 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 #include<sys/stat.h>
 #include<fcntl.h>
 #include "Remote_Access_Server.h"
+#include "Single_Process_Concurrent_Server_main.h"
 
-struct User{
-	int id;//user id, not nessecarily equal sockid
-	int fd;//user fd
-	char name[20];//user name
-	char ip_port[30];//<ip>/<port>
-};
 struct User user[30];
 int usercount = 0;
 
