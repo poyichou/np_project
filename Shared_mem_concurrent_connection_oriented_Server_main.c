@@ -1,3 +1,10 @@
+#define MAXLENG	10000
+#define MAXSIZE 10001
+const char WELCOME_MESSAGE[] =	"****************************************\n"
+				"** Welcome to the information server. **\n"
+				"****************************************\n";
+
+#define SERV_TCP_PORT 7000
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -7,15 +14,92 @@
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<fcntl.h>
-#include "Remote_Access_Server.h"
 
+struct numbered_pipe_command{
+	int idx;
+	int count;
+	int pipe_out_fd[2];
+	int pipe_in_fd[2];
+};
 struct numbered_pipe_command command[1000];
 
+int  checkarg(char* str, char* delim, int len);
+void myprintenv(int sockfd);
+void err_dump(char* msg);
+int  err_dump_sock(int sockfd, char* msg);
+int  err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2);
+void process_request(int sockfd);
+int  parser(int sockfd, char* line, int len);
+void free_command(int sockfd, int idx , int *commandcount);
+void close_pipe_in_fd(int sockfd, int *pipe_in_fd);
+void initial_command_count(struct numbered_pipe_command *command, char* buff);
+void initial_command_refd_pipe_fd(int commandcount);
+void mypipe(int sockfd, int *pipe_fd);
+int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]);
+int  my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]);
+void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
+void read_in_write_out(int sockfd, int out_fd, int in_fd);
+int  build_in_or_command(int sockfd, char* line, int len);
+void read_timed_command(int sockfd, int *pipe_in_fd, int *cmdcount, int offset);
+void free_arg(char *arg[], int *argcount);
 
 int pipefd[1000][2];
+int pipe_flag = 0;
 int cmdcount = 0;
 char *pathes[256];
 
+int main(int argc, char* argv[])
+{
+	int sockfd, newsockfd, childpid;
+	struct sockaddr_in	cli_addr, serv_addr;
+	int wpid;
+	int status = 0;
+	socklen_t clilen;
+	/*
+	 *Open a TCP socket(an Internet stream socket).
+	 */
+	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+		err_dump("server:can't open stream socket\n");
+	}
+	memset((char*)&serv_addr, 0, sizeof(serv_addr));
+	//bzero((char* )&serv_addr, sizeof(serv_addr));
+	serv_addr.sin_family		= AF_INET;
+	serv_addr.sin_addr.s_addr	= htonl(INADDR_ANY);
+	serv_addr.sin_port			= htons(SERV_TCP_PORT);
+
+	if(bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
+		err_dump("server:can't bind local address\n");
+	}
+	listen(sockfd, 5);
+	while(1)
+	{
+		clilen = sizeof(cli_addr);
+		newsockfd = accept(sockfd, ((struct sockaddr*)&cli_addr), &clilen);
+		if(newsockfd < 0){
+			err_dump("server:accept error\n");
+		}
+		if((childpid = fork()) < 0){
+			err_dump("server: fork error\n");
+		}else if(childpid == 0){/*child process*/
+			/*close original socket*/
+			close(sockfd);
+			//fork twice to avoid zombie
+			if((childpid = fork()) < 0){
+				err_dump("server: fork error\n");
+			}else if(childpid == 0){/*child proccess*/
+				/*process the request*/
+				process_request(newsockfd);
+			}
+			exit(0);
+		}
+		close(newsockfd);/*parent process*/
+		while ((wpid = wait(&status)) > 0);
+	}
+}
+void err_dump(char* msg){
+	perror(msg);
+	exit(1);
+}
 int err_dump_sock(int sockfd, char* msg){
 	dup2(sockfd, 2);
 	perror(msg);
@@ -33,6 +117,141 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	write(sockfd, result, size - 1);
 	return 1;
 }
+void process_request(int sockfd){
+	//deal with 3 case: 
+	//		1.	aaaaaaaaa\r\n
+	//		2.	aaaaaaaaa\r\nbbbbbbbbbb
+	//		3.	aaaaaaaaaa
+	//			aa\r\n
+	int rc, i, j, line_offset = 0;
+	//int fill_back_flag = 0;
+	int enterflag = 0;
+	char line[MAXSIZE];
+	int read_end_flag = 0;
+	//change dir
+	if(chdir(getenv("HOME")) < 0){
+		err_dump("cd error");
+	}
+	if(chdir("ras") < 0){
+		err_dump("cd error");
+	}
+	if(setenv("PATH", "bin:.", 1) != 0){//failed
+		write(sockfd, "setenv failed", (strlen("setenv failed")) * sizeof(char));
+	}
+
+	write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
+	write(sockfd, "% ", 2);
+	while(1)
+	{
+		if(enterflag == 1){
+			write(sockfd, "% ", 2);
+		}
+		enterflag = 0;
+		if(read_end_flag == 0){
+			rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
+		}
+		if(rc < 0){
+			err_dump_sock(sockfd, "readline:read error\n");
+		}else if(rc == 0){
+			read_end_flag = 1;
+		}else if(read_end_flag == 1 && line_offset == 0){//finished
+			exit(0);
+		}else{
+			//may contain not one command
+			for(i = 0 ; i < rc + line_offset ; i++){
+				if( (line[i] == '\n' || line[i] == '\r')){//remove telnet newline
+					enterflag = 1;
+					line[i] = '\0';//i == length of first command
+				}else if(line[i] != '\n' && line[i] != '\r' && enterflag == 1){//contain more than one command
+					break;
+				}
+			}
+			if(enterflag == 0){
+				line_offset += rc;
+				continue;
+			}
+			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
+			if(build_in_or_command(sockfd, line, i) == 1){
+				exit(0);
+			}
+			if(i < rc + line_offset){//contain more than one command
+				//clear
+				for(j = 0 ; j < i ; j++){
+					line[j] = '\0';
+				}
+				//fill back
+				for(j = 0 ; j + i < rc + line_offset ; j++){
+					line[j] = line[j + i];
+					line[j + i] = '\0';
+				}
+				line_offset = j;
+			}else if(i == rc + line_offset){//reset
+				memset(line, 0, MAXSIZE);
+				line_offset = 0;
+			}
+		}
+	}
+}
+int build_in_or_command(int sockfd, char* line, int len){
+	if (strcmp(line, "/") == 0){
+		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
+		return 0;
+	}else if(strncmp(line, "exit", 4) == 0){//exit
+		return 1;
+	}else if(strncmp(line, "printenv", 8) == 0){
+		//printenv
+		char tmp_line[MAXSIZE];
+		char* vname;
+		int wc = 0;
+		strcpy(tmp_line, line);
+		vname = strtok(tmp_line, " ");
+		vname = strtok(NULL, " ");//name
+		if(vname == NULL){//no arg
+			myprintenv(sockfd);
+		}else{//has arg
+			char* vvalue = getenv(vname);
+			if(vvalue == NULL){
+				write(sockfd, "There is no match", (strlen("There is no match")) * sizeof(char));
+			}else{
+				char* writestr;
+				writestr = malloc((strlen(vname) + strlen("=") + strlen(vvalue) + strlen("\n") + 1) * sizeof(char));
+				strcpy(writestr, vname);
+				strcat(writestr, "=");
+				strcat(writestr, vvalue);
+				strcat(writestr, "\n");
+				wc = write(sockfd, writestr, (strlen(writestr)) * sizeof(char));
+				free(writestr);
+				if(wc < 0){
+					err_dump_sock(sockfd, "write error");
+				}
+			}
+		}
+	}else if(strncmp(line, "setenv", 6) == 0){
+		//setenv
+		char tmp_line[MAXSIZE];
+		char* vname, *vvalue;// variable name, value
+		strcpy(tmp_line, line);
+		vname = strtok(tmp_line, " ");
+		//name
+		vname = strtok(NULL, " ");
+		//usage error
+		if(vname == NULL){
+			write(sockfd, "no variable name", (strlen("no variable name")) * sizeof(char));
+		}
+		//value
+		vvalue = strtok(NULL, " ");
+		if(vvalue == NULL){// no value
+			write(sockfd, "no value", (strlen("no value")) * sizeof(char));
+		}else{// has value
+			if(setenv(vname, vvalue, 1) != 0){//failed
+				write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+			}
+		}
+	}else{
+		parser(sockfd, line, len);
+	}
+	return 0;
+}
 int parser(int sockfd, char* line, int len){//it also call exec
 	char *buff;
 	int pid;
@@ -43,7 +262,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int exec_result = 0;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
-	int out_userfd = -1, in_userfd = -1;
 
 	buff = strtok(line, " ");
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
@@ -55,9 +273,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 		if(buff == NULL && argcount > 0){// with pipe before or not, aka "...... | cmd" or "cmd"//no more pipe!!
 			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
 			//real command
-			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userfd, out_userfd);
-			in_userfd = -1;
-			out_userfd = -1;
+			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg);
 			//parent
 			free_arg(arg, &argcount);
 			//free file
@@ -108,12 +324,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				}
 			}
 			//return err_dump_sock(sockfd, "continual pipe");
-		}else if(buff[0] == '>' && strlen(buff) > 1 && argcount > 0){//pipe to other user
-			// buff+1 to skip '>'
-			out_userfd = atoi(buff + 1);
-		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
-			// buff+1 to skip '<'
-			in_userfd = atoi(buff + 1);
 		}
 		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename
@@ -216,7 +426,7 @@ void parent_close(int sockfd, int *pipe_in_fd, int *pipe_out_fd){
 		pipe_out_fd[1] = 0;
 	}
 }
-int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[], int in_userfd, int out_userfd){
+int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[]){
 	int refd_in = 0, refd_out = 0;
 	//real command
 	if((*pid = fork()) == 0){
@@ -238,10 +448,6 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 				err_dump_sock(sockfd, "dup refd_in error");
 			}
 			refd_in = 0;
-		}else if(in_userfd >= 0){//input from other user
-			if(dup2(in_userfd, 0) < 0){
-				err_dump_sock(sockfd, "dup refd_in error");
-			}
 		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
 			err_dump_sock(sockfd, "pipe_in while has input file");
 		}
@@ -254,8 +460,6 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 			if(dup2(refd_out, 1) < 0){
 				err_dump_sock(sockfd, "dup refd_out error");
 			}
-		}else if(out_userfd >= 0){//pipe to other user
-			dup2(out_userfd, 1);
 		}else if(outfile == NULL){
 			dup2(sockfd, 1);
 		}
@@ -393,4 +597,13 @@ int checkarg(char* str, char* delim, int len){
 		buff = strtok(NULL, delim);
 	}
 	return n;
+}
+void myprintenv(int sockfd){
+	int i;
+	extern char **environ;
+	for(i= 0 ; environ[i] != NULL ; i++){
+		write(sockfd, environ[i], (strlen(environ[i])) * sizeof(char));
+		write(sockfd, "\n", (strlen("\n")) * sizeof(char));
+	}
+	return;
 }

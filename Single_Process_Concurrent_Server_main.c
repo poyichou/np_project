@@ -1,5 +1,9 @@
 #define MAXLENG	10000
 #define MAXSIZE 10001
+const char WELCOME_MESSAGE[] =	"****************************************\n"
+				"** Welcome to the information server. **\n"
+				"****************************************\n";
+
 #define SERV_TCP_PORT 7000
 #include<stdio.h>
 #include<string.h>
@@ -10,20 +14,23 @@
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<fcntl.h>
+#include "Remote_Access_Server.h"
 
 struct User{
-	int id;//user id, equal sockid
+	int id;//user id, not nessecarily equal sockid
+	int fd;//user fd
 	char name[20];//user name
 	char ip_port[30];//<ip>/<port>
-}
+};
 struct User user[30];
 int usercount = 0;
 
 int line_offset = 0;
 
-int  err_dump_sock(int sockfd, char* msg);
-int  err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2);
-
+void err_dump(char* msg){
+	perror(msg);
+	exit(1);
+}
 int passiveTCP(int port, int qlen){
 	int sockfd;
 	struct sockaddr_in  serv_addr;
@@ -104,6 +111,152 @@ void set_env(int sockfd, char* line){
 		}
 	}
 }
+int fd_idx(int fd){
+	int i;
+	for(i = 0 ; i < usercount ; i++){
+		//find myself
+		if(user[i].fd == fd){
+			return i;
+		}
+	}
+	return -1;
+}
+int id_idx(int id){
+	int i;
+	for(i = 0 ; i < usercount ; i++){
+		//find myself
+		if(user[i].id == id){
+			return i;
+		}
+	}
+	return -1;
+}
+int check_id_exist(int myfd, char *userid){
+	int i;
+	int userid_i = atoi(userid);
+	for(i = 0 ; i < usercount ; i++){
+		//find
+		if(user[i].id == userid_i){
+			return 0;
+		}
+	}
+	//not found
+	if(write(myfd, "Error:user #", strlen("Error:user #")) < 0){
+		err_dump("write error");
+	}
+	if(write(myfd, userid, strlen(userid)) < 0){
+		err_dump("write error");
+	}
+	if(write(myfd, " dose not exist yet.\n", strlen(" dose not exist yet.\n")) < 0){
+		err_dump("write error");
+	}
+	return -1;
+}
+void simple_tell(int fd, char* msg){
+	if(write(fd, msg, strlen(msg)) < 0){
+		err_dump("write error");
+	}
+}
+void tell(int myfd, char* line){
+	char *buff;
+	int userid;
+	buff = strtok(line, " ");//buff == tell
+	buff = strtok(NULL, " ");//buff == userid
+	if(buff == NULL)
+		err_dump("parse tell error");
+	userid = atoi(buff);
+	int myidx = fd_idx(myfd);
+	//*** IamUser told you ***: Hello World.
+	char msg[strlen("***  told you ***: ") + strlen(user[myidx].name) + strlen(line) + 2];
+	if(check_id_exist(myfd, buff) < 0){//user not exist
+		return;
+	}
+	strcpy(msg, "*** ");
+	strcat(msg, user[myidx].name);
+	strcat(msg, " told you ***: ");
+	//get msg
+	buff = strtok(NULL, " ");
+	while(buff != NULL)
+	{
+		strcat(msg, buff);
+		strcat(msg, " ");
+		buff = strtok(NULL, " ");
+	}
+	strcat(msg, "\n");
+	simple_tell(user[id_idx(userid)].fd, msg);
+}
+void simple_broadcast(int myfd, char* msg){
+	int i;
+	for(i = 0 ; i < usercount ; i++){
+		if(user[i].fd != myfd){
+			simple_tell(user[i].fd, msg);
+		}
+	}
+}
+void broadcast(int myfd, char* line){
+	int myidx = fd_idx(myfd);
+	//*** IamUser yelled ***: Hi everybody
+	char msg[strlen("***  yelled ***: ") + strlen(user[myidx].name) + strlen(line) + 2];
+	char* buff;
+	strcpy(msg, "*** ");
+	strcat(msg, user[myidx].name);
+	strcat(msg, " yelled ***: ");
+	buff = strtok(line, " ");//"yell"
+	//get msg
+	buff = strtok(NULL, " ");
+	while(buff != NULL)
+	{
+		strcat(msg, buff);
+		strcat(msg, " ");
+		buff = strtok(NULL, " ");
+	}
+	strcat(msg, "\n");
+	simple_broadcast(myfd, msg);
+}
+void name(int myfd, char* line){
+	char* name;
+	name = strtok(line, " ");
+	name = strtok(NULL, " ");//name
+	int i;
+	for(i = 0 ; i < usercount ; i++){
+		if(user[i].fd != myfd && strcmp(user[i].name, name) == 0){
+			char msg[strlen("*** User \'\' already exists. ***\n") + strlen(name) + 1];
+			strcpy(msg, "*** User \'");
+			strcat(msg, name);
+			strcpy(msg, "\' already exists. ***\n");
+			simple_tell(user[fd_idx(myfd)].id, msg);
+			return;
+		}
+	}
+	int myidx = fd_idx(myfd);
+	strcpy(user[myidx].name, name);
+	//yell *** User from (IP/port) is named '(name)'. ***
+	char msg[strlen("*** User from  is named \'\'. ***\n") + strlen(user[myidx].ip_port) + strlen(name) + 1];
+	strcpy(msg, "*** User from ");
+	strcat(msg, user[myidx].ip_port);
+	strcat(msg, " is named \'");
+	strcat(msg, name);
+	strcat(msg, "\'. ***\n");
+	simple_broadcast(myfd, msg);
+}
+void print_all_user(int myfd){
+	int i = 0;
+	char msg[3 + 1 + 20 + 1 + 6 + 1 + strlen("<-me") + 1];
+	write(myfd, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n", strlen("<ID>\t<nickname>\t<IP/port>\t<indicate me>\n"));
+	for(i = 0 ; i < usercount ; i++){
+		memset(msg, 0, sizeof(msg));
+		snprintf(msg, sizeof(msg), "%d", user[i].id);
+		strcat(msg, "\t");
+		strcat(msg, user[i].name);
+		strcat(msg, "\t");
+		strcat(msg, user[i].ip_port);
+		if(user[i].fd == myfd){
+			strcat(msg, "\t<-me");
+		}
+		strcat(msg, "\n");
+		simple_tell(myfd, msg);
+	}
+}
 int build_in_or_command(int sockfd, char* line, int len){
 	if (strcmp(line, "/") == 0){
 		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
@@ -114,12 +267,20 @@ int build_in_or_command(int sockfd, char* line, int len){
 		print_env(sockfd, line);
 	}else if(strncmp(line, "setenv", 6) == 0){
 		set_env(sockfd, line);
+	}else if(strncmp(line, "tell", 6) == 0){//tell <client id> <msg(may contain white space)>
+		tell(sockfd, line);
+	}else if(strncmp(line, "yell", 6) == 0){//yell <msg>
+		broadcast(sockfd, line);
+	}else if(strncmp(line, "name", 6) == 0){//name <name>
+		name(sockfd, line);
+	}else if(strncmp(line, "who", 6) == 0){//who
+		print_all_user(sockfd);
 	}else{
 		parser(sockfd, line, len);
 	}
 	return 0;
 }
-void process_request(int sockfd){
+int process_request(int sockfd){
 	//deal with 3 case: 
 	//		1.	aaaaaaaaa\r\n
 	//		2.	aaaaaaaaa\r\nbbbbbbbbbb
@@ -194,25 +355,40 @@ void process_request(int sockfd){
 }
 void sort_user(int usercount){
 	struct User temp;
-	int i = 0;
+	int i = 0, j = 0;
 	for(i = 0 ; i < usercount - 1 ; i++){
-		//swap
-		if(user[i].id > user[i + 1].id){
-			temp = user[i];
-			user[i] = user[i + 1];
-			user[i + 1] = temp;
+		for(j = i ; j >= 0 ; j--){
+			//swap
+			if(user[j].id > user[j + 1].id){
+				temp = user[j];
+				user[j] = user[j + 1];
+				user[j + 1] = temp;
+			}
 		}
 	}
 }
+int min_unused_user_id(int *usercount){
+	int i = 0;
+	int unused_id = 1;
+	for(i = 0 ; i < *usercount ; i++){
+		if(unused_id == user[i].id){
+			unused_id++;
+		}else
+			return unused_id;
+	}
+	return unused_id;
+}
 void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	char port_buff[6];
-	user[*usercount].id = newsockfd;
+	user[*usercount].id = min_unused_user_id(usercount);
+	user[*usercount].fd = newsockfd;
 	strcpy(user[*usercount].name, "(no name)");
-	sprintf(port_buff, "%hu", cli_addr.sin_port);
-	strcpy(user[*usercount].ip_port, ntoa(cli_addr.sin_addr));
+	snprintf(port_buff, sizeof(port_buff), "%hu", cli_addr.sin_port);
+	//inet_ntoa is for ipv4
+	strcpy(user[*usercount].ip_port, inet_ntoa(cli_addr.sin_addr));
 	strcat(user[*usercount].ip_port, "/");
 	strcat(user[*usercount].ip_port, port_buff);
-	*usercount++;
+	(*usercount)++;
 	sort_user(*usercount);
 }
 
@@ -237,11 +413,10 @@ int main(int argc, char* argv[])
 			err_dump("select error");
 		}
 		// new connection from client
-		if(FD_SET(msockfd, rfds)){
+		if(FD_ISSET(msockfd, &rfds)){
 			int newsockfd;
-			char port[10];
 			alen = sizeof(cli_addr);
-			newsockfd = accept(msockfd, (struct sock_addr *)&cli_addr, &alen);
+			newsockfd = accept(msockfd, (struct sockaddr *)&cli_addr, &alen);
 			if(newsockfd < 0){
 				err_dump("accept error");
 			}
@@ -249,8 +424,8 @@ int main(int argc, char* argv[])
 			//add a user
 			add_user(cli_addr, &usercount, newsockfd);
 			//write welcome message and prompt
-			write(sockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
-			write(sockfd, "% ", 2);
+			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
+			write(newsockfd, "% ", 2);
 		}
 		//proccess requests
 		for(fd = 0 ; fd < nfds ; fd++){
@@ -263,8 +438,4 @@ int main(int argc, char* argv[])
 			}
 		}
 	}
-}
-void err_dump(char* msg){
-	perror(msg);
-	exit(1);
 }
