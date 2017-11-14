@@ -20,6 +20,9 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 struct User user[30];
 int usercount = 0;
 
+//user_pipefd[from user id][to user id]
+int user_pipefd[31][31][2];
+
 int line_offset = 0;
 
 void err_dump(char* msg){
@@ -166,9 +169,7 @@ void tell(int myfd, char* line){
 	if(check_id_exist(myfd, buff) < 0){//user not exist
 		return;
 	}
-	strcpy(msg, "*** ");
-	strcat(msg, user[myidx].name);
-	strcat(msg, " told you ***: ");
+	snprintf(msg, sizeof(msg), "*** %s told you ***: ", user[myidx].name);
 	//get msg
 	buff = strtok(NULL, " ");
 	while(buff != NULL)
@@ -181,7 +182,7 @@ void tell(int myfd, char* line){
 	simple_tell(user[id_idx(userid)].fd, msg);
 	simple_tell(user[id_idx(userid)].fd, "% ");
 }
-void simple_broadcast(int myfd, char* msg){
+void simple_yell(int myfd, char* msg){
 	int i;
 	for(i = 0 ; i < usercount ; i++){
 		if(user[i].fd != myfd){
@@ -189,14 +190,37 @@ void simple_broadcast(int myfd, char* msg){
 		}
 	}
 }
+void simple_broadcast(int myfd, char* msg){
+	int i;
+	for(i = 0 ; i < usercount ; i++){
+		simple_tell(user[i].fd, msg);
+	}
+}
+void yell(int myfd, char* line){
+	int myidx = fd_idx(myfd);
+	//*** IamUser yelled ***: Hi everybody
+	char msg[strlen("***  yelled ***: ") + strlen(user[myidx].name) + strlen(line) + 2];
+	char* buff;
+	snprintf(msg, sizeof(msg), "*** %s yelled ***: ", user[myidx].name);
+	buff = strtok(line, " ");//"yell"
+	//get msg
+	buff = strtok(NULL, " ");
+	while(buff != NULL)
+	{
+		strcat(msg, buff);
+		strcat(msg, " ");
+		buff = strtok(NULL, " ");
+	}
+	strcat(msg, "\n");
+	simple_yell(myfd, msg);
+	simple_yell(myfd, "% ");
+}
 void broadcast(int myfd, char* line){
 	int myidx = fd_idx(myfd);
 	//*** IamUser yelled ***: Hi everybody
 	char msg[strlen("***  yelled ***: ") + strlen(user[myidx].name) + strlen(line) + 2];
 	char* buff;
-	strcpy(msg, "*** ");
-	strcat(msg, user[myidx].name);
-	strcat(msg, " yelled ***: ");
+	snprintf(msg, sizeof(msg), "*** %s yelled ***: ", user[myidx].name);
 	buff = strtok(line, " ");//"yell"
 	//get msg
 	buff = strtok(NULL, " ");
@@ -218,9 +242,7 @@ void name(int myfd, char* line){
 	for(i = 0 ; i < usercount ; i++){
 		if(user[i].fd != myfd && strcmp(user[i].name, name) == 0){
 			char msg[strlen("*** User '' already exists. ***\n") + strlen(name) + 1];
-			strcpy(msg, "*** User '");
-			strcat(msg, name);
-			strcat(msg, "' already exists. ***\n");
+			snprintf(msg, sizeof(msg), "*** User '%s' already exists. ***\n", name);
 			simple_tell(myfd, msg);
 			return;
 		}
@@ -229,11 +251,7 @@ void name(int myfd, char* line){
 	strcpy(user[myidx].name, name);
 	//yell *** User from (IP/port) is named '(name)'. ***
 	char msg[strlen("*** User from  is named ''. ***\n") + strlen(user[myidx].ip_port) + strlen(name) + 1];
-	strcpy(msg, "*** User from ");
-	strcat(msg, user[myidx].ip_port);
-	strcat(msg, " is named '");
-	strcat(msg, name);
-	strcat(msg, "'. ***\n");
+	snprintf(msg, sizeof(msg), "*** User from %s is named '%s'. ***\n", user[myidx].ip_port, name);
 	simple_broadcast(myfd, msg);
 	simple_broadcast(myfd, "% ");
 }
@@ -243,11 +261,7 @@ void print_all_user(int myfd){
 	write(myfd, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n", strlen("<ID>\t<nickname>\t<IP/port>\t<indicate me>\n"));
 	for(i = 0 ; i < usercount ; i++){
 		memset(msg, 0, sizeof(msg));
-		snprintf(msg, sizeof(msg), "%d", user[i].id);
-		strcat(msg, "\t");
-		strcat(msg, user[i].name);
-		strcat(msg, "\t");
-		strcat(msg, user[i].ip_port);
+		snprintf(msg, sizeof(msg), "%d\t%s\t%s", user[i].id, user[i].name, user[i].ip_port);
 		if(user[i].fd == myfd){
 			strcat(msg, "\t<-me");
 		}
@@ -268,7 +282,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 	}else if(strncmp(line, "tell", 4) == 0){//tell <client id> <msg(may contain white space)>
 		tell(sockfd, line);
 	}else if(strncmp(line, "yell", 4) == 0){//yell <msg>
-		broadcast(sockfd, line);
+		yell(sockfd, line);
 	}else if(strncmp(line, "name", 4) == 0){//name <name>
 		name(sockfd, line);
 	}else if(strncmp(line, "who", 3) == 0){//who
@@ -401,6 +415,7 @@ void del_user(int fd, int *usercount){
 }
 int main(int argc, char* argv[])
 {
+	memset(user_pipefd, 0, sizeof(user_pipefd));
 	int msockfd;//master sock
 	struct sockaddr_in cli_addr;
 	fd_set rfds; // read file descriptor set

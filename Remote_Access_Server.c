@@ -13,7 +13,8 @@
 struct numbered_pipe_command command[1000];
 
 extern struct User user[30];
-
+//user_pipefd[from user id][to user id]
+extern int user_pipefd[31][31][2];
 int pipefd[1000][2];
 int cmdcount = 0;
 char *pathes[256];
@@ -35,6 +36,16 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	write(sockfd, result, size - 1);
 	return 1;
 }
+void close_user_pipe(int myid, int in_userid, int out_userid){
+	if(in_userid > 0){
+		close(user_pipefd[in_userid][myid][0]);
+		user_pipefd[in_userid][myid][0] = 0;
+		user_pipefd[in_userid][myid][1] = 0;
+	}
+	if(out_userid > 0){
+		close(user_pipefd[myid][out_userid][1]);
+	}
+}
 int parser(int sockfd, char* line, int len){//it also call exec
 	char *buff;
 	int pid;
@@ -45,7 +56,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	int exec_result = 0;
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
-	int out_userfd = -1, in_userfd = -1;
+	int out_userid = -1, in_userid = -1;
 	char oneline[strlen(line) + 1];
 	strcpy(oneline, line);
 	buff = strtok(line, " ");
@@ -58,9 +69,10 @@ int parser(int sockfd, char* line, int len){//it also call exec
 		if(buff == NULL && argcount > 0){// with pipe before or not, aka "...... | cmd" or "cmd"//no more pipe!!
 			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
 			//real command
-			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userfd, out_userfd);
-			in_userfd = -1;
-			out_userfd = -1;
+			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userid, out_userid);
+			close_user_pipe(user[fd_idx(sockfd)].id, in_userid, out_userid);
+			in_userid = -1;
+			out_userid = -1;
 			//parent
 			free_arg(arg, &argcount);
 			//free file
@@ -116,47 +128,40 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			int userid = atoi(buff + 1);
 			int useridx = id_idx(userid);
 			int myidx = fd_idx(sockfd);
-			char temp_id[3];
-			out_userfd = user[useridx].fd;
+			int myid = user[myidx].id;
+			out_userid = userid;
+			//check if pipe exist
+			if(user_pipefd[myid][userid][0] > 0){
+				//*** Error: the pipe #2->#1 already exists. *** 
+				char errmsg[strlen("*** Error: the pipe #-># already exists. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d already exists. ***\n", myid, userid);
+				simple_tell(sockfd, errmsg);
+				return 1;
+			}
 			//yell *** IamUser (#3) just piped 'cat test.html | cat >1' to Iam1 (#1) ***
 			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
-			strcpy(msg, "*** ");
-			strcat(msg, user[myidx].name);
-			strcat(msg, " (#");
-			snprintf(temp_id, sizeof(temp_id), "%d", user[myidx].id);
-			strcat(msg, temp_id);
-			strcat(msg, ") just piped '");
-			strcat(msg, oneline);
-			strcat(msg, "' to ");
-			strcat(msg, user[useridx].name);
-			strcat(msg, " (#");
-			snprintf(temp_id, sizeof(temp_id), "%d", user[useridx].id);
-			strcat(msg, temp_id);
-			strcat(msg, ") ***\n");
+			snprintf(msg, sizeof(msg), "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", user[myidx].name, myid, oneline, user[useridx].name, userid);
 			simple_broadcast(sockfd, msg);
 			simple_broadcast(sockfd, "% ");
+			pipe(user_pipefd[myid][userid]);
 		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
 			// buff+1 to skip '<'
 			int userid = atoi(buff + 1);
 			int useridx = id_idx(userid);
 			int myidx = fd_idx(sockfd);
-			char temp_id[3];
-			in_userfd = user[id_idx(userid)].fd;
+			int myid = user[myidx].id;
+			in_userid = userid;
+			//check if pipe exist
+			if(user_pipefd[userid][myid][0] == 0){
+				//*** Error: the pipe #1->#2 does not exist yet. *** 
+				char errmsg[strlen("*** Error: the pipe #-># does not exist yet exist yet. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet exist yet. ***\n", userid, myid);
+				simple_tell(sockfd, errmsg);
+				return 1;
+			}
 			//yell *** IamUser (#3) just received from student7 (#7) by 'cat <7' ***
 			char msg[strlen("***  (#) just received from  (#) by '' ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
-			strcpy(msg, "*** ");
-			strcat(msg, user[myidx].name);
-			strcat(msg, " (#");
-			snprintf(temp_id, sizeof(temp_id), "%d", user[myidx].id);
-			strcat(msg, temp_id);
-			strcat(msg, ") just received from ");
-			strcat(msg, user[useridx].name);
-			strcat(msg, " (#");
-			snprintf(temp_id, sizeof(temp_id), "%d", user[useridx].id);
-			strcat(msg, temp_id);
-			strcat(msg, ") by '");
-			strcat(msg, oneline);
-			strcat(msg, "' ***\n");
+			snprintf(msg, sizeof(msg), "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", user[myidx].name, myid, user[useridx].name, userid, oneline);
 			simple_broadcast(sockfd, msg);
 			simple_broadcast(sockfd, "% ");
 		}
@@ -261,7 +266,7 @@ void parent_close(int sockfd, int *pipe_in_fd, int *pipe_out_fd){
 		pipe_out_fd[1] = 0;
 	}
 }
-int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[], int in_userfd, int out_userfd){
+int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[], int in_userid, int out_userid){
 	int refd_in = 0, refd_out = 0;
 	//real command
 	if((*pid = fork()) == 0){
@@ -283,10 +288,9 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 				err_dump_sock(sockfd, "dup refd_in error");
 			}
 			refd_in = 0;
-		}else if(in_userfd >= 0){//input from other user
-			if(dup2(in_userfd, 0) < 0){
-				err_dump_sock(sockfd, "dup refd_in error");
-			}
+		}else if(in_userid >= 0){//input from other user
+			close(user_pipefd[in_userid][user[fd_idx(sockfd)].id][1]);
+			dup2(user_pipefd[in_userid][user[fd_idx(sockfd)].id][0], 0);
 		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
 			err_dump_sock(sockfd, "pipe_in while has input file");
 		}
@@ -299,8 +303,9 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 			if(dup2(refd_out, 1) < 0){
 				err_dump_sock(sockfd, "dup refd_out error");
 			}
-		}else if(out_userfd >= 0){//pipe to other user
-			dup2(out_userfd, 1);
+		}else if(out_userid >= 0){//pipe to other user
+			close(user_pipefd[user[fd_idx(sockfd)].id][out_userid][0]);
+			dup2(user_pipefd[user[fd_idx(sockfd)].id][out_userid][1], 1);
 		}else if(outfile == NULL){
 			dup2(sockfd, 1);
 		}
