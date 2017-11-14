@@ -7,6 +7,7 @@
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<fcntl.h>
+
 struct numbered_pipe_command{
 	int idx;
 	int count;

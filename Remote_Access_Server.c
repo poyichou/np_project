@@ -44,7 +44,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	char *infile = NULL, *outfile = NULL;
 	int pipe_in_fd[2] = {0};
 	int out_userfd = -1, in_userfd = -1;
-
+	char oneline[strlen(line) + 1];
+	strcpy(oneline, line);
 	buff = strtok(line, " ");
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
@@ -110,10 +111,52 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//return err_dump_sock(sockfd, "continual pipe");
 		}else if(buff[0] == '>' && strlen(buff) > 1 && argcount > 0){//pipe to other user
 			// buff+1 to skip '>'
-			out_userfd = atoi(buff + 1);
+			int userid = atoi(buff + 1);
+			int useridx = id_idx(userid);
+			int myidx = fd_idx(sockfd);
+			char temp_id[3];
+			out_userfd = user[useridx].fd;
+			//yell *** IamUser (#3) just piped 'cat test.html | cat >1' to Iam1 (#1) ***
+			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
+			strcpy(msg, "*** ");
+			strcat(msg, user[myidx].name);
+			strcat(msg, " (#");
+			snprintf(temp_id, sizeof(temp_id), "%d", user[myidx].id);
+			strcat(msg, temp_id);
+			strcat(msg, ") just piped '");
+			strcat(msg, oneline);
+			strcat(msg, "' to ");
+			strcat(msg, user[useridx].name);
+			strcat(msg, " (#");
+			snprintf(temp_id, sizeof(temp_id), "%d", user[useridx].id);
+			strcat(msg, temp_id);
+			strcat(msg, ") ***\n");
+			simple_broadcast(sockfd, msg);
+			simple_broadcast(sockfd, "% ");
 		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
 			// buff+1 to skip '<'
-			in_userfd = atoi(buff + 1);
+			int userid = atoi(buff + 1);
+			int useridx = id_idx(userid);
+			int myidx = fd_idx(sockfd);
+			char temp_id[3];
+			in_userfd = user[id_idx(userid)].fd;
+			//yell *** IamUser (#3) just received from student7 (#7) by 'cat <7' ***
+			char msg[strlen("***  (#) just received from  (#) by '' ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
+			strcpy(msg, "*** ");
+			strcat(msg, user[myidx].name);
+			strcat(msg, " (#");
+			snprintf(temp_id, sizeof(temp_id), "%d", user[myidx].id);
+			strcat(msg, temp_id);
+			strcat(msg, ") just received from ");
+			strcat(msg, user[useridx].name);
+			strcat(msg, " (#");
+			snprintf(temp_id, sizeof(temp_id), "%d", user[useridx].id);
+			strcat(msg, temp_id);
+			strcat(msg, ") by '");
+			strcat(msg, oneline);
+			strcat(msg, "' ***\n");
+			simple_broadcast(sockfd, msg);
+			simple_broadcast(sockfd, "% ");
 		}
 		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename

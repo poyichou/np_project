@@ -184,6 +184,7 @@ void tell(int myfd, char* line){
 	}
 	strcat(msg, "\n");
 	simple_tell(user[id_idx(userid)].fd, msg);
+	simple_tell(user[id_idx(userid)].fd, "% ");
 }
 void simple_broadcast(int myfd, char* msg){
 	int i;
@@ -212,6 +213,7 @@ void broadcast(int myfd, char* line){
 	}
 	strcat(msg, "\n");
 	simple_broadcast(myfd, msg);
+	simple_broadcast(myfd, "% ");
 }
 void name(int myfd, char* line){
 	char* name;
@@ -220,24 +222,25 @@ void name(int myfd, char* line){
 	int i;
 	for(i = 0 ; i < usercount ; i++){
 		if(user[i].fd != myfd && strcmp(user[i].name, name) == 0){
-			char msg[strlen("*** User \'\' already exists. ***\n") + strlen(name) + 1];
-			strcpy(msg, "*** User \'");
+			char msg[strlen("*** User '' already exists. ***\n") + strlen(name) + 1];
+			strcpy(msg, "*** User '");
 			strcat(msg, name);
-			strcpy(msg, "\' already exists. ***\n");
-			simple_tell(user[fd_idx(myfd)].id, msg);
+			strcat(msg, "' already exists. ***\n");
+			simple_tell(myfd, msg);
 			return;
 		}
 	}
 	int myidx = fd_idx(myfd);
 	strcpy(user[myidx].name, name);
 	//yell *** User from (IP/port) is named '(name)'. ***
-	char msg[strlen("*** User from  is named \'\'. ***\n") + strlen(user[myidx].ip_port) + strlen(name) + 1];
+	char msg[strlen("*** User from  is named ''. ***\n") + strlen(user[myidx].ip_port) + strlen(name) + 1];
 	strcpy(msg, "*** User from ");
 	strcat(msg, user[myidx].ip_port);
-	strcat(msg, " is named \'");
+	strcat(msg, " is named '");
 	strcat(msg, name);
-	strcat(msg, "\'. ***\n");
+	strcat(msg, "'. ***\n");
 	simple_broadcast(myfd, msg);
+	simple_broadcast(myfd, "% ");
 }
 void print_all_user(int myfd){
 	int i = 0;
@@ -267,17 +270,19 @@ int build_in_or_command(int sockfd, char* line, int len){
 		print_env(sockfd, line);
 	}else if(strncmp(line, "setenv", 6) == 0){
 		set_env(sockfd, line);
-	}else if(strncmp(line, "tell", 6) == 0){//tell <client id> <msg(may contain white space)>
+	}else if(strncmp(line, "tell", 4) == 0){//tell <client id> <msg(may contain white space)>
 		tell(sockfd, line);
-	}else if(strncmp(line, "yell", 6) == 0){//yell <msg>
+	}else if(strncmp(line, "yell", 4) == 0){//yell <msg>
 		broadcast(sockfd, line);
-	}else if(strncmp(line, "name", 6) == 0){//name <name>
+	}else if(strncmp(line, "name", 4) == 0){//name <name>
 		name(sockfd, line);
-	}else if(strncmp(line, "who", 6) == 0){//who
+	}else if(strncmp(line, "who", 3) == 0){//who
 		print_all_user(sockfd);
 	}else{
 		parser(sockfd, line, len);
 	}
+	//write prompt
+	write(sockfd, "% ", 2);
 	return 0;
 }
 int process_request(int sockfd){
@@ -304,8 +309,6 @@ int process_request(int sockfd){
 
 	while(1)
 	{
-		if(enterflag == 1)
-			write(sockfd, "% ", 2);
 		enterflag = 0;
 		if(read_end_flag == 0)
 			rc = read(sockfd, line + line_offset, MAXLENG - line_offset);
@@ -391,7 +394,16 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	(*usercount)++;
 	sort_user(*usercount);
 }
+void del_user(int fd, int *usercount){
+	int del_idx = fd_idx(fd);
+	user[del_idx].id = 1000;
+	user[del_idx].fd = -1;
+	memset(user[del_idx].name, 0, sizeof(user[del_idx].name));
+	memset(user[del_idx].ip_port, 0, sizeof(user[del_idx].ip_port));
+	sort_user(*usercount);
+	(*usercount)--;
 
+}
 int main(int argc, char* argv[])
 {
 	int msockfd;//master sock
@@ -432,6 +444,7 @@ int main(int argc, char* argv[])
 			if(fd != msockfd && FD_ISSET(fd, &rfds)){
 				// client type "exit"
 				if(process_request(fd) == 1){
+					del_user(fd, &usercount);
 					close(fd);
 					FD_CLR(fd, &afds);
 				}
