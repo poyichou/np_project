@@ -142,7 +142,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
 			snprintf(msg, sizeof(msg), "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", user[myidx].name, myid, oneline, user[useridx].name, userid);
 			simple_broadcast(sockfd, msg);
-			simple_broadcast(sockfd, "% ");
+			//simple_broadcast(sockfd, "% ");
 			pipe(user_pipefd[myid][userid]);
 		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
 			// buff+1 to skip '<'
@@ -163,7 +163,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			char msg[strlen("***  (#) just received from  (#) by '' ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
 			snprintf(msg, sizeof(msg), "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", user[myidx].name, myid, user[useridx].name, userid, oneline);
 			simple_broadcast(sockfd, msg);
-			simple_broadcast(sockfd, "% ");
+			//simple_broadcast(sockfd, "% ");
 		}
 		else if(buff[0] == '>'){//redirect >
 			buff = strtok(NULL, " ");//filename

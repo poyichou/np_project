@@ -180,7 +180,7 @@ void tell(int myfd, char* line){
 	}
 	strcat(msg, "\n");
 	simple_tell(user[id_idx(userid)].fd, msg);
-	simple_tell(user[id_idx(userid)].fd, "% ");
+	//simple_tell(user[id_idx(userid)].fd, "% ");
 }
 void simple_yell(int myfd, char* msg){
 	int i;
@@ -213,7 +213,7 @@ void yell(int myfd, char* line){
 	}
 	strcat(msg, "\n");
 	simple_yell(myfd, msg);
-	simple_yell(myfd, "% ");
+	//simple_yell(myfd, "% ");
 }
 void broadcast(int myfd, char* line){
 	int myidx = fd_idx(myfd);
@@ -232,7 +232,7 @@ void broadcast(int myfd, char* line){
 	}
 	strcat(msg, "\n");
 	simple_broadcast(myfd, msg);
-	simple_broadcast(myfd, "% ");
+	//simple_broadcast(myfd, "% ");
 }
 void name(int myfd, char* line){
 	char* name;
@@ -253,7 +253,7 @@ void name(int myfd, char* line){
 	char msg[strlen("*** User from  is named ''. ***\n") + strlen(user[myidx].ip_port) + strlen(name) + 1];
 	snprintf(msg, sizeof(msg), "*** User from %s is named '%s'. ***\n", user[myidx].ip_port, name);
 	simple_broadcast(myfd, msg);
-	simple_broadcast(myfd, "% ");
+	//simple_broadcast(myfd, "% ");
 }
 void print_all_user(int myfd){
 	int i = 0;
