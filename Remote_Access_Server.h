@@ -24,7 +24,7 @@ void close_user_pipe(int myid, int in_userid, int out_userid);
 void initial_command_count(struct numbered_pipe_command *command, char* buff);
 void initial_command_refd_pipe_fd(int commandcount);
 void mypipe(int sockfd, int *pipe_fd);
-int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]);
+int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in_userid);
 int  my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile, char *arg[], int in_userfd, int out_userfd);
 void parent_close(int sockfd, int *pipe_infd, int *pipe_out_fd);
 void read_in_write_out(int sockfd, int out_fd, int in_fd);

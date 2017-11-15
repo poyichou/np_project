@@ -100,7 +100,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			cmdcount++;
 			read_timed_command(sockfd, command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
-			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg);
+			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg, in_userid);
+			in_userid = -1;
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
@@ -319,7 +320,7 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 	}
 	return 0;
 }
-int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
+int my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in_userid){
 	int refd_in_cmd = 0;
 	//child
 	if((*pid = fork()) == 0){
@@ -342,6 +343,9 @@ int  my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[]){
 			if(command[i].pipe_in_fd[1] > 0 && close(command[i].pipe_in_fd[1]) < 0){
 				err_dump_sock(sockfd, "close error");
 			}
+		}else if(in_userid >= 0){//input from other user
+			close(user_pipefd[in_userid][user[fd_idx(sockfd)].id][1]);
+			dup2(user_pipefd[in_userid][user[fd_idx(sockfd)].id][0], 0);
 		}else if(infile != NULL && command[i].pipe_in_fd[0] > 0){
 			err_dump_sock(sockfd, "inputfile while pipe_in");
 		}
