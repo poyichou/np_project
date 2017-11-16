@@ -41,7 +41,7 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	return 1;
 }
 void unlink_user_fifo(int myid, int in_userid){
-	if(in_userid >= 0){
+	if(in_userid >= 0 && myid != in_userid){
 		char in_fifo_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 		snprintf(in_fifo_name, sizeof(in_fifo_name), "/tmp/fifo%dto%d", in_userid, myid);
 		if (unlink(in_fifo_name) < 0) err_dump("unlink error");
@@ -72,8 +72,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
 			//real command
 			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userid, out_userid);
-			in_userid = -1;
-			out_userid = -1;
 			//parent
 			free_arg(arg, &argcount);
 			//free file
@@ -89,6 +87,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//wait for all child
 			while ((wpid = wait(&status)) > 0);
 			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
+			in_userid = -1;
+			out_userid = -1;
 			break;
 		}else if(buff == NULL && argcount == 0){
 			break;
@@ -103,13 +103,13 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			read_timed_command(sockfd, command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
 			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg, in_userid);
-			in_userid = -1;
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
 			free_arg(arg, &argcount);
 			while ((wpid = wait(&status)) > 0);
 			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
+			in_userid = -1;
 			if(exec_result == 1){
 				break;
 			}
@@ -141,6 +141,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				//*** Error: the pipe #2->#1 already exists. *** 
 				char errmsg[strlen("*** Error: the pipe #-># already exists. ***\n") + 2 + 2 + 1];
 				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d already exists. ***\n", myid, userid);
+				simple_tell(myid, myid, errmsg);
+				return 1;
+			}else if(myid == userid){
+				char errmsg[strlen("*** Error: the pipe #-># should not be the same id. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d should not be the same id. ***\n", myid, userid);
 				simple_tell(myid, myid, errmsg);
 				return 1;
 			}
