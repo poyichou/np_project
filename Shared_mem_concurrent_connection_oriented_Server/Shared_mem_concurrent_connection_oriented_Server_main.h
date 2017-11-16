@@ -30,6 +30,7 @@ struct Shared_Mem{
 	int usercount;
 	int first_flag;
 	int fifo_flag[31][31];
+	int to_close_fd[30];
 };
 int passiveTCP(int port, int qlen);
 void printenv_all(int sockfd);
@@ -51,6 +52,7 @@ void detatch_and_delete();
 void sig_to_user(int userid, int signo);
 int build_in_or_command(int sockfd, char* line, int len);
 void recv_msg();
+void server_close_fd();
 void reaper(int signo);
 int process_request(int sockfd);
 void sort_user(int usercount);

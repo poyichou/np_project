@@ -26,7 +26,7 @@ struct Shared_Mem *memptr;
 int my_userid_global;
 int line_offset = 0;
 int shmid;
-
+int oldest_flag = 0;
 int passiveTCP(int port, int qlen){
 	int sockfd;
 	struct sockaddr_in  serv_addr;
@@ -265,7 +265,7 @@ void name(int myfd, char* line){
 }
 void print_all_user(int myfd){
 	int i = 0;
-	char msg[3 + 1 + 20 + 1 + 6 + 1 + strlen("<-me") + 1];
+	char msg[3 + 1 + 20 + 1 + 6 + 1 + strlen("<-me") + 2];
 	write(myfd, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n", strlen("<ID>\t<nickname>\t<IP/port>\t<indicate me>\n"));
 	for(i = 0 ; i < memptr -> usercount ; i++){
 		memset(msg, 0, sizeof(msg));
@@ -311,7 +311,9 @@ int build_in_or_command(int sockfd, char* line, int len){
 		return 0;
 	}else if(strncmp(line, "exit", 4) == 0){//exit
 		del_user(sockfd, &(memptr -> usercount));
-		detatch_and_delete();
+		if(shmdt(memptr) < 0) 
+			err_dump("server: can't detach shared memory");
+		//detatch_and_delete();
 		return 1;
 	}else if(strncmp(line, "printenv", 8) == 0){
 		print_env(sockfd, line);
@@ -348,11 +350,34 @@ void recv_msg(){
 		}
 	}
 }
+//server would get shm only at this function and detach before returning this function
+void server_close_fd(){
+	int i;
+	//get, attach
+	get_shared_mem();
+	for(i = 0 ; i < 30 ; i++){
+		if(memptr -> to_close_fd[i] == 0){
+		//	break;
+			;
+		}else{
+			if(close(memptr -> to_close_fd[i]) < 0){
+				err_dump("server_close_fd error");
+			}
+			memptr -> to_close_fd[i] = 0;
+		}
+	}
+	//detach
+	detatch_and_delete();
+	//if(shmdt(memptr) < 0) 
+	//	err_dump("server: can't detach shared memory");
+}
 void reaper(int signo){
 	if(signo == SIGCHLD){
 		union wait status;
 		while(wait3(&status, WNOHANG, (struct rusage*)0) >= 0)
 			/*empty*/;
+		if(oldest_flag == 0)
+			server_close_fd();
 	}else if(signo == SIGUSR1){//receive from tell, yell
 		recv_msg();
 	}
@@ -407,7 +432,9 @@ int process_request(int sockfd){
 			}
 			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
 			if(build_in_or_command(sockfd, line, i) == 1){
-				close(sockfd);
+				if(close(sockfd) < 0){
+					err_dump("close sockfd error");
+				}
 				exit(0); // client type "exit"
 			}
 			if(i < rc + line_offset){//contain more than one command
@@ -467,7 +494,17 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	(*usercount)++;
 	sort_user(*usercount);
 }
+void append_to_close_fd(int fd){
+	int i;
+	for(i = 0 ; i < 30 ; i++){
+		if(memptr -> to_close_fd[i] == 0){
+			memptr -> to_close_fd[i] = fd;
+			break;
+		}
+	}
+}
 void del_user(int fd, int *usercount){
+	append_to_close_fd(fd);
 	int del_idx = fd_idx(fd);
 	memptr -> user[*usercount].pid = -1;
 	memptr -> user[del_idx].id = 1000;
@@ -515,8 +552,8 @@ int main(int argc, char* argv[])
 	//delete shared memory no matter it's which last server failed to delete or which getten this time
 	del_shared_mem();
 
-	(void)signal(SIGCHLD, reaper);//handle dead child
 
+	signal(SIGCHLD, reaper);//handle dead child
 	while(1)
 	{
 		// new connection from client
@@ -531,6 +568,7 @@ int main(int argc, char* argv[])
 		if((pid = fork()) < 0){
 			err_dump("fork error");
 		}else if(pid == 0){
+			oldest_flag = 1;
 			close(msockfd);
 			//get shared memory
 			get_shared_mem();
