@@ -160,6 +160,7 @@ void simple_tell(int myid, int targetid, char* msg){
 		err_dump("write error");
 	}else if(myid != targetid){
 		add_msg(myid, targetid, msg);
+		sig_to_user(targetid, SIGUSR1);
 	}
 }
 void tell(int myfd, char* line){
@@ -290,6 +291,20 @@ void detatch_and_delete(){
 			err_dump("server: can't detach shared memory");
 	}
 }
+void sig_to_user(int userid, int signo){
+	int i;
+	int myidx = id_idx(my_userid_global);
+	if(userid == -1){//yell sig to siblings
+		for(i = 0 ; i < memptr -> usercount ; i++){
+			if(i != myidx)
+				sig_to_user(memptr -> user[i].pid, signo);
+		}
+	}else if(userid > 0){//signal to one user
+		kill(memptr -> user[id_idx(userid)].pid, signo);
+	}else{
+		err_dump("sig_to_user:usage error");
+	}
+}
 int build_in_or_command(int sockfd, char* line, int len){
 	if (strcmp(line, "/") == 0){
 		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
@@ -304,13 +319,10 @@ int build_in_or_command(int sockfd, char* line, int len){
 		set_env(sockfd, line);
 	}else if(strncmp(line, "tell", 4) == 0){//tell <client id> <msg(may contain white space)>
 		tell(sockfd, line);
-		kill(0, SIGUSR1);//send to all brothers
 	}else if(strncmp(line, "yell", 4) == 0){//yell <msg>
 		yell(sockfd, line);
-		kill(0, SIGUSR1);//send to all brothers
 	}else if(strncmp(line, "name", 4) == 0){//name <name>
 		name(sockfd, line);
-		kill(0, SIGUSR1);//send to all brothers
 	}else if(strncmp(line, "who", 3) == 0){//who
 		print_all_user(sockfd);
 	}else{
@@ -443,6 +455,7 @@ int min_unused_user_id(int *usercount){
 	return unused_id;
 }
 void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
+	memptr -> user[*usercount].pid = getpid();
 	memptr -> user[*usercount].id = min_unused_user_id(usercount);
 	my_userid_global = memptr -> user[*usercount].id;
 	memptr -> user[*usercount].fd = newsockfd;
@@ -456,6 +469,7 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 }
 void del_user(int fd, int *usercount){
 	int del_idx = fd_idx(fd);
+	memptr -> user[*usercount].pid = -1;
 	memptr -> user[del_idx].id = 1000;
 	memptr -> user[del_idx].fd = -1;
 	memset(memptr -> user[del_idx].name, 0, sizeof(memptr -> user[del_idx].name));

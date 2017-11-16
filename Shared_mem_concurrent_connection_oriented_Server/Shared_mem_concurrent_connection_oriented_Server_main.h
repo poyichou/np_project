@@ -16,6 +16,7 @@ struct Msg{
 };
 
 struct User{
+	int pid;
 	int id;
 	int fd;
 	char name[20];
@@ -47,6 +48,7 @@ void broadcast(int myfd, char* line);
 void name(int myfd, char* line);
 void print_all_user(int myfd);
 void detatch_and_delete();
+void sig_to_user(int userid, int signo);
 int build_in_or_command(int sockfd, char* line, int len);
 void recv_msg();
 void reaper(int signo);
