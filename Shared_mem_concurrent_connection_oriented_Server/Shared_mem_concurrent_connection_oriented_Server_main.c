@@ -24,7 +24,6 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 
 struct Shared_Mem *memptr;
 int my_userid_global;
-int fifo_flag[31][31];
 int line_offset = 0;
 int shmid;
 
@@ -480,8 +479,10 @@ void get_shared_mem(){
 void del_shared_mem(){
 	shmid = shmget(SHMKEY, sizeof(struct Shared_Mem), 0666 | IPC_CREAT);
 	//shmget error
-	if(shmid < 0)
+	if(shmid < 0){
 		err_dump("server: can't create shared memory");
+		printf("errno=%d\n",errno);
+	}
 	if((memptr = (struct Shared_Mem*)shmat(shmid, (char*)0, 0)) == (void *)-1) 
 		err_dump("shmat error");
 	//delete shared memory no matter it's which last server failed to delete or which getten this time
@@ -492,7 +493,6 @@ void del_shared_mem(){
 }
 int main(int argc, char* argv[])
 {
-	memset(fifo_flag, 0, sizeof(fifo_flag));
 	int msockfd;//master sock
 	int pid;
 	struct sockaddr_in cli_addr;

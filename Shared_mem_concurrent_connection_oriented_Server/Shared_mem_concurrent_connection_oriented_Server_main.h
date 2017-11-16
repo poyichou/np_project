@@ -28,6 +28,7 @@ struct Shared_Mem{
 	struct User user[30];
 	int usercount;
 	int first_flag;
+	int fifo_flag[31][31];
 };
 int passiveTCP(int port, int qlen);
 void printenv_all(int sockfd);

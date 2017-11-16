@@ -14,7 +14,6 @@
 
 struct numbered_pipe_command command[1000];
 extern struct Shared_Mem *memptr;
-extern int fifo_flag[31][31];
 //user_pipefd[from user id][to user id]
 int pipefd[1000][2];
 int cmdcount = 0;
@@ -42,10 +41,11 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	return 1;
 }
 void unlink_user_fifo(int myid, int in_userid){
-	if(in_userid > 0){
+	if(in_userid >= 0){
 		char in_fifo_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 		snprintf(in_fifo_name, sizeof(in_fifo_name), "/tmp/fifo%dto%d", in_userid, myid);
 		if (unlink(in_fifo_name) < 0) err_dump("unlink error");
+		memptr -> fifo_flag[in_userid][myid] = 0;
 	}
 }
 int parser(int sockfd, char* line, int len){//it also call exec
@@ -72,7 +72,6 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
 			//real command
 			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userid, out_userid);
-			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
 			in_userid = -1;
 			out_userid = -1;
 			//parent
@@ -89,6 +88,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			close_pipe_in_fd(sockfd, pipe_in_fd);
 			//wait for all child
 			while ((wpid = wait(&status)) > 0);
+			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
 			break;
 		}else if(buff == NULL && argcount == 0){
 			break;
@@ -103,13 +103,13 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			read_timed_command(sockfd, command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
 			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg, in_userid);
-			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
 			in_userid = -1;
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
 			free_arg(arg, &argcount);
 			while ((wpid = wait(&status)) > 0);
+			unlink_user_fifo(memptr -> user[fd_idx(sockfd)].id, in_userid);
 			if(exec_result == 1){
 				break;
 			}
@@ -137,7 +137,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			snprintf(fifo_out_name, sizeof(fifo_out_name), "/tmp/fifo%dto%d", myid, userid);
 			out_userid = userid;
 			//check if pipe exist
-			if(fifo_flag[myid][userid] == 1){
+			if(memptr -> fifo_flag[myid][userid] == 1){
 				//*** Error: the pipe #2->#1 already exists. *** 
 				char errmsg[strlen("*** Error: the pipe #-># already exists. ***\n") + 2 + 2 + 1];
 				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d already exists. ***\n", myid, userid);
@@ -154,7 +154,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			if((mkfifo(fifo_out_name, S_IRUSR | S_IWUSR)) < 0 && (errno != EEXIST)){
 				err_dump("fifo out error");
 			}
-			fifo_flag[myid][userid] = 1;
+			memptr -> fifo_flag[myid][userid] = 1;
 		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
 			// buff+1 to skip '<'
 			int userid = atoi(buff + 1);
@@ -163,7 +163,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			int myid = memptr -> user[myidx].id;
 			in_userid = userid;
 			//check if pipe exist
-			if(fifo_flag[userid][myid] == 0){
+			if(memptr -> fifo_flag[userid][myid] == 0){
 				//*** Error: the pipe #1->#2 does not exist yet. *** 
 				char errmsg[strlen("*** Error: the pipe #-># does not exist yet exist yet. ***\n") + 2 + 2 + 1];
 				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet exist yet. ***\n", userid, myid);
@@ -305,6 +305,7 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 			char fifo_in_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 			snprintf(fifo_in_name, sizeof(fifo_in_name), "/tmp/fifo%dto%d", in_userid, memptr -> user[fd_idx(sockfd)].id);
 			int fifo_in_fd = open(fifo_in_name, O_RDONLY);
+			if(fifo_in_fd < 0) err_dump_sock(sockfd, "read fifo error");
 			dup2(fifo_in_fd, 0);
 		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
 			err_dump_sock(sockfd, "pipe_in while has input file");
