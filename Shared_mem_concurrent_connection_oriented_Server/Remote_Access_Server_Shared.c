@@ -40,11 +40,12 @@ int err_dump_sock_v(int sockfd, char* msg, char* v, char* msg2){
 	write(sockfd, result, size - 1);
 	return 1;
 }
-void unlink_user_fifo(int myid, int in_userid){
+void unlink_user_fifo(int myid, int in_userid){//actually, not use fifo, just normal file
 	if(in_userid >= 0 && myid != in_userid){
 		char in_fifo_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 		snprintf(in_fifo_name, sizeof(in_fifo_name), "/tmp/fifo%dto%d", in_userid, myid);
-		if (unlink(in_fifo_name) < 0) err_dump("unlink error");
+		//if (unlink(in_fifo_name) < 0) err_dump("unlink error");
+		if(remove(in_fifo_name) < 0) err_dump("remove file error");
 		memptr -> fifo_flag[in_userid][myid] = 0;
 	}
 }
@@ -153,12 +154,9 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(memptr -> user[myidx].name) + 2 +	strlen(oneline) + strlen(memptr -> user[useridx].name) + 2 + 2];
 			snprintf(msg, sizeof(msg), "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", memptr -> user[myidx].name, myid, oneline, memptr -> user[useridx].name, userid);
 			simple_broadcast(myid, msg);
-			//tell brother to catch msg
-			//sig_to_user(-1, SIGUSR1);//send to all brothers
-			//simple_broadcast(sockfd, "% ");
-			if((mkfifo(fifo_out_name, S_IRUSR | S_IWUSR)) < 0 && (errno != EEXIST)){
-				err_dump("fifo out error");
-			}
+			//if((mkfifo(fifo_out_name, S_IRUSR | S_IWUSR)) < 0 && (errno != EEXIST)){
+			//	err_dump("fifo out error");
+			//}
 			memptr -> fifo_flag[myid][userid] = 1;
 		}else if(buff[0] == '<' && strlen(buff) > 1 && argcount > 0){//pipe from other user
 			// buff+1 to skip '<'
@@ -309,7 +307,8 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 		}else if(in_userid >= 0){//input from other user
 			char fifo_in_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 			snprintf(fifo_in_name, sizeof(fifo_in_name), "/tmp/fifo%dto%d", in_userid, memptr -> user[fd_idx(sockfd)].id);
-			int fifo_in_fd = open(fifo_in_name, O_RDONLY);
+			//int fifo_in_fd = open(fifo_in_name, O_RDONLY);
+			int fifo_in_fd = open(fifo_in_name, O_RDONLY);//actually, not use fifo, just normal file
 			if(fifo_in_fd < 0) err_dump_sock(sockfd, "read fifo error");
 			dup2(fifo_in_fd, 0);
 		}else if(pipe_in_fd[0] > 0 && infile != NULL){//input error
@@ -327,7 +326,8 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 		}else if(out_userid >= 0){//pipe to other user
 			char fifo_out_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 			snprintf(fifo_out_name, sizeof(fifo_out_name), "/tmp/fifo%dto%d", memptr -> user[fd_idx(sockfd)].id, out_userid);
-			int fifo_out_fd = open(fifo_out_name, O_WRONLY);
+			//int fifo_out_fd = open(fifo_out_name, O_WRONLY);
+			int fifo_out_fd = open(fifo_out_name, O_WRONLY | O_CREAT, 0666);//actually, not use fifo, just normal file
 			dup2(fifo_out_fd, 1);
 		}else if(outfile == NULL){
 			dup2(sockfd, 1);
@@ -368,7 +368,8 @@ int my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in
 		}else if(in_userid >= 0){//input from other user
 			char fifo_in_name[strlen("/tmp/fifoto") + 2 + 2 + 1];
 			snprintf(fifo_in_name, sizeof(fifo_in_name), "/tmp/fifo%dto%d", in_userid, memptr -> user[fd_idx(sockfd)].id);
-			int fifo_in_fd = open(fifo_in_name, O_RDONLY);
+			//int fifo_in_fd = open(fifo_in_name, O_RDONLY);
+			int fifo_in_fd = open(fifo_in_name, O_RDONLY);//actually, not use fifo, just normal file
 			dup2(fifo_in_fd, 0);
 		}else if(infile != NULL && command[i].pipe_in_fd[0] > 0){
 			err_dump_sock(sockfd, "inputfile while pipe_in");
