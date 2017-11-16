@@ -26,6 +26,8 @@ struct User{
 
 struct Shared_Mem{
 	struct User user[30];
+	int usercount;
+	int first_flag;
 };
 int passiveTCP(int port, int qlen);
 void printenv_all(int sockfd);
@@ -43,6 +45,7 @@ void yell(int myfd, char* line);
 void broadcast(int myfd, char* line);
 void name(int myfd, char* line);
 void print_all_user(int myfd);
+void detatch_and_delete();
 int build_in_or_command(int sockfd, char* line, int len);
 void recv_msg();
 void reaper(int signo);
@@ -51,3 +54,4 @@ void sort_user(int usercount);
 int min_unused_user_id(int *usercount);
 void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd);
 void del_user(int fd, int *usercount);
+void get_shared_mem();

@@ -148,6 +148,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(memptr -> user[myidx].name) + 2 +	strlen(oneline) + strlen(memptr -> user[useridx].name) + 2 + 2];
 			snprintf(msg, sizeof(msg), "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", memptr -> user[myidx].name, myid, oneline, memptr -> user[useridx].name, userid);
 			simple_broadcast(myid, msg);
+			//tell brother to catch msg
+			kill(0, SIGUSR1);
 			//simple_broadcast(sockfd, "% ");
 			if((mkfifo(fifo_out_name, S_IRUSR | S_IWUSR)) < 0 && (errno != EEXIST)){
 				err_dump("fifo out error");
@@ -171,7 +173,9 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//yell *** IamUser (#3) just received from student7 (#7) by 'cat <7' ***
 			char msg[strlen("***  (#) just received from  (#) by '' ***") + strlen(memptr -> user[myidx].name) + 2 +	strlen(oneline) + strlen(memptr -> user[useridx].name) + 2 + 2];
 			snprintf(msg, sizeof(msg), "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", memptr -> user[myidx].name, myid, memptr -> user[useridx].name, userid, oneline);
-			simple_broadcast(sockfd, msg);
+			simple_broadcast(myid, msg);
+			//tell brother to catch msg
+			kill(0, SIGUSR1);
 			//simple_broadcast(sockfd, "% ");
 		}
 		else if(buff[0] == '>'){//redirect >

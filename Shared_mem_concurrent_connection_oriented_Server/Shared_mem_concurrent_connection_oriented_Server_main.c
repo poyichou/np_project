@@ -23,10 +23,10 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 #include "Shared_mem_concurrent_connection_oriented_Server_main.h"
 
 struct Shared_Mem *memptr;
-int usercount = 0;
 int my_userid_global;
 int fifo_flag[31][31];
 int line_offset = 0;
+int shmid;
 
 int passiveTCP(int port, int qlen){
 	int sockfd;
@@ -110,7 +110,7 @@ void set_env(int sockfd, char* line){
 }
 int fd_idx(int fd){
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		//find myself
 		if(memptr -> user[i].fd == fd){
 			return i;
@@ -120,7 +120,7 @@ int fd_idx(int fd){
 }
 int id_idx(int id){
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		//find myself
 		if(memptr -> user[i].id == id){
 			return i;
@@ -131,7 +131,7 @@ int id_idx(int id){
 int check_id_exist(int myfd, char *userid){
 	int i;
 	int userid_i = atoi(userid);
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		//find
 		if(memptr -> user[i].id == userid_i){
 			return 0;
@@ -192,7 +192,7 @@ void tell(int myfd, char* line){
 }
 void simple_yell(int myid, char* msg){
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		if(memptr -> user[i].id != myid){
 			simple_tell(myid, memptr -> user[i].id, msg);
 		}
@@ -200,7 +200,7 @@ void simple_yell(int myid, char* msg){
 }
 void simple_broadcast(int myid, char* msg){
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		simple_tell(myid, memptr -> user[i].id, msg);
 	}
 }
@@ -247,7 +247,7 @@ void name(int myfd, char* line){
 	name = strtok(line, " ");
 	name = strtok(NULL, " ");//name
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		if(memptr -> user[i].fd != myfd && strcmp(memptr -> user[i].name, name) == 0){
 			char msg[strlen("*** User '' already exists. ***\n") + strlen(name) + 1];
 			snprintf(msg, sizeof(msg), "*** User '%s' already exists. ***\n", name);
@@ -267,7 +267,7 @@ void print_all_user(int myfd){
 	int i = 0;
 	char msg[3 + 1 + 20 + 1 + 6 + 1 + strlen("<-me") + 1];
 	write(myfd, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n", strlen("<ID>\t<nickname>\t<IP/port>\t<indicate me>\n"));
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		memset(msg, 0, sizeof(msg));
 		snprintf(msg, sizeof(msg), "%d\t%s\t%s", memptr -> user[i].id,
 												 memptr -> user[i].name, 
@@ -279,12 +279,25 @@ void print_all_user(int myfd){
 		simple_tell(memptr -> user[fd_idx(myfd)].id, memptr -> user[fd_idx(myfd)].id, msg);
 	}
 }
+void detatch_and_delete(){
+	//no user left, so clean
+	if(memptr -> usercount == 0){
+		if(shmdt(memptr) < 0) 
+			err_dump("server: can't detach shared memory");
+		if (shmctl(shmid, IPC_RMID, (struct shmid_ds *) 0) < 0) 
+			err_dump("cannot remove shm");
+	}else{
+		if(shmdt(memptr) < 0) 
+			err_dump("server: can't detach shared memory");
+	}
+}
 int build_in_or_command(int sockfd, char* line, int len){
 	if (strcmp(line, "/") == 0){
 		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
 		return 0;
 	}else if(strncmp(line, "exit", 4) == 0){//exit
-		del_user(sockfd, &usercount);
+		del_user(sockfd, &(memptr -> usercount));
+		detatch_and_delete();
 		return 1;
 	}else if(strncmp(line, "printenv", 8) == 0){
 		print_env(sockfd, line);
@@ -310,7 +323,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 }
 void recv_msg(){
 	int i;
-	for(i = 0 ; i < usercount ; i++){
+	for(i = 0 ; i < memptr -> usercount ; i++){
 		if(memptr -> user[i].sendflag > 0){
 			//send to me !!
 			if(memptr -> user[i].msg[my_userid_global].msgcount > 0){
@@ -382,8 +395,10 @@ int process_request(int sockfd){
 				continue;
 			}
 			//test command is built-in or not(eg. exit, setenv, printenv or nornal command)
-			if(build_in_or_command(sockfd, line, i) == 1)
+			if(build_in_or_command(sockfd, line, i) == 1){
+				close(sockfd);
 				exit(0); // client type "exit"
+			}
 			if(i < rc + line_offset){//contain more than one command
 				//clear
 				for(j = 0 ; j < i ; j++){
@@ -448,7 +463,32 @@ void del_user(int fd, int *usercount){
 	memset(memptr -> user[del_idx].ip_port, 0, sizeof(memptr -> user[del_idx].ip_port));
 	sort_user(*usercount);
 	(*usercount)--;
-
+}
+void get_shared_mem(){
+	shmid = shmget(SHMKEY, sizeof(struct Shared_Mem), 0666 | IPC_CREAT);
+	//shmget error
+	if(shmid < 0)
+		err_dump("server: can't create shared memory");
+	if((memptr = (struct Shared_Mem*)shmat(shmid, (char*)0, 0)) == (void *)-1) 
+		err_dump("shmat error");
+	//first create
+	if(memptr -> first_flag != 1){//just create
+		memset(memptr, 0, sizeof(struct Shared_Mem));
+		memptr -> first_flag = 1;
+	}
+}
+void del_shared_mem(){
+	shmid = shmget(SHMKEY, sizeof(struct Shared_Mem), 0666 | IPC_CREAT);
+	//shmget error
+	if(shmid < 0)
+		err_dump("server: can't create shared memory");
+	if((memptr = (struct Shared_Mem*)shmat(shmid, (char*)0, 0)) == (void *)-1) 
+		err_dump("shmat error");
+	//delete shared memory no matter it's which last server failed to delete or which getten this time
+	if(shmdt(memptr) < 0) 
+		err_dump("server: can't detach shared memory");
+	if(shmctl(shmid, IPC_RMID, (struct shmid_ds *) 0) < 0) 
+		err_dump("cannot remove shm");
 }
 int main(int argc, char* argv[])
 {
@@ -456,10 +496,10 @@ int main(int argc, char* argv[])
 	int msockfd;//master sock
 	int pid;
 	struct sockaddr_in cli_addr;
-	int shm_flag = 0;
-	int shmid;
 	socklen_t alen; // client address length
 	msockfd = passiveTCP(SERV_TCP_PORT, 5);
+	//delete shared memory no matter it's which last server failed to delete or which getten this time
+	del_shared_mem();
 
 	(void)signal(SIGCHLD, reaper);//handle dead child
 
@@ -474,23 +514,14 @@ int main(int argc, char* argv[])
 				continue;
 			err_dump("accept error");
 		}
-		//add a user
-		add_user(cli_addr, &usercount, newsockfd);
 		if((pid = fork()) < 0){
 			err_dump("fork error");
 		}else if(pid == 0){
 			close(msockfd);
 			//get shared memory
-			if(shm_flag == 0){//shared memory hasn't been created
-				if((shmid = shmget(SHMKEY, sizeof(struct Shared_Mem), 0666 | IPC_CREAT)) < 0)
-					err_dump("server: can't get shared memory");
-				shm_flag = 1;
-			}else if(shm_flag == 1){//shared memory has been create
-				if((shmid = shmget(SHMKEY, sizeof(struct Shared_Mem), 0)) < 0)	
-					err_dump("shmget error");
-			}
-			if((memptr = (struct Shared_Mem*)shmat(shmid, (char*)0, 0)) == (void *)-1) 
-				err_dump("shmat error");
+			get_shared_mem();
+			//add a user
+			add_user(cli_addr, &(memptr -> usercount), newsockfd);
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 			write(newsockfd, "% ", 2);

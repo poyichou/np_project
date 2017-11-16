@@ -101,7 +101,9 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			read_timed_command(sockfd, command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
 			mypipe(sockfd, command[cmdcount - 1].pipe_out_fd);
 			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg, in_userid);
+			close_user_pipe(user[fd_idx(sockfd)].id, in_userid, out_userid);
 			in_userid = -1;
+			out_userid = -1;
 			parent_close(sockfd, command[cmdcount - 1].pipe_in_fd, command[cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
