@@ -215,6 +215,18 @@ void yell(int myfd, char* line){
 	simple_yell(myfd, msg);
 	//simple_yell(myfd, "% ");
 }
+void login_broadcast(int myfd){
+	int myidx = fd_idx(myfd);
+	char msg[strlen("*** User '' entered from . ***") + 20 + 30 + 2];
+	snprintf(msg, sizeof(msg), "*** User '%s' entered from %s. ***\n", user[myidx].name, user[myidx].ip_port);
+	simple_broadcast(myfd, msg);
+}
+void logout_yell(int myfd){
+	int myidx = fd_idx(myfd);
+	char msg[strlen("*** User '' left. ***") + 20 + 2];
+	snprintf(msg, sizeof(msg), "*** User '%s' left. ***\n", user[myidx].name);
+	simple_yell(myfd, msg);
+}
 void broadcast(int myfd, char* line){
 	int myidx = fd_idx(myfd);
 	//*** IamUser yelled ***: Hi everybody
@@ -447,6 +459,7 @@ int main(int argc, char* argv[])
 			add_user(cli_addr, &usercount, newsockfd);
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
+			login_broadcast(newsockfd);
 			write(newsockfd, "% ", 2);
 		}
 		//proccess requests
@@ -454,6 +467,7 @@ int main(int argc, char* argv[])
 			if(fd != msockfd && FD_ISSET(fd, &rfds)){
 				// client type "exit"
 				if(process_request(fd) == 1){
+					logout_yell(fd);
 					del_user(fd, &usercount);
 					close(fd);
 					FD_CLR(fd, &afds);
