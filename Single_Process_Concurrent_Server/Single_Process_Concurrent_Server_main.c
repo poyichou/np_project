@@ -75,8 +75,8 @@ void print_env(int sockfd, char *line){
 		if(vvalue == NULL){
 			write(sockfd, "There is no match", (strlen("There is no match")) * sizeof(char));
 		}else if(strcmp(vname, "PATH") == 0){
-			char msg[strlen("PATH") + strlen("=") + strlen(path[user[fd_idx(sockfd)].id]) + strlen("\n") + 1];
-			snprintf(msg, sizeof(msg), "PATH=%s", path[user[fd_idx(sockfd)].id]);
+			char msg[strlen("PATH") + strlen("=") + strlen(path[user[fd_idx(sockfd)].id - 1]) + strlen("\n") + 1];
+			snprintf(msg, sizeof(msg), "PATH=%s\n", path[user[fd_idx(sockfd)].id - 1]);
 			wc = write(sockfd, msg, (strlen(msg)) * sizeof(char));
 			if(wc < 0){
 				err_dump_sock(sockfd, "write error");
@@ -471,7 +471,7 @@ int main(int argc, char* argv[])
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 			login_broadcast(newsockfd);
-			strcpy(path[user[fd_idx(newsockfd)].id], "bin:.");
+			strcpy(path[user[fd_idx(newsockfd)].id - 1], "bin:.");
 			write(newsockfd, "% ", 2);
 		}
 		//proccess requests

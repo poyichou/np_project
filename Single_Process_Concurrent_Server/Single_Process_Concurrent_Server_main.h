@@ -12,6 +12,7 @@ struct User{
 	int fd;//user fd
 	char name[20];//user name
 	char ip_port[30];//<ip>/<port>
+	struct numbered_pipe_command command[1000];
 };
 void err_dump(char* msg);
 int passiveTCP(int port, int qlen);
