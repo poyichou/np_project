@@ -212,6 +212,18 @@ void yell(int myfd, char* line){
 	simple_yell(memptr -> user[myidx].id, msg);
 	//simple_yell(myfd, "% ");
 }
+void login_broadcast(int myid){
+	int myidx = id_idx(myid);
+	char msg[strlen("*** User '' entered from . ***") + 20 + 30 + 2];
+	snprintf(msg, sizeof(msg), "*** User '%s' entered from %s. ***\n", memptr -> user[myidx].name, memptr -> user[myidx].ip_port);
+	simple_broadcast(myid, msg);
+}
+void logout_yell(int myid){
+	int myidx = id_idx(myid);
+	char msg[strlen("*** User '' left. ***") + 20 + 2];
+	snprintf(msg, sizeof(msg), "*** User '%s' left. ***\n", memptr -> user[myidx].name);
+	simple_yell(myid, msg);
+}
 void broadcast(int myfd, char* line){
 	int myidx = id_idx(my_userid_global);
 	//*** IamUser yelled ***: Hi everybody
@@ -300,6 +312,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
 		return 0;
 	}else if(strncmp(line, "exit", 4) == 0){//exit
+		logout_yell(my_userid_global);
 		del_user(sockfd, &(memptr -> usercount));
 		if(shmdt(memptr) < 0) 
 			err_dump("server: can't detach shared memory");
@@ -327,16 +340,18 @@ int build_in_or_command(int sockfd, char* line, int len){
 void recv_msg(){
 	int i;
 	int j;
-	for(i = 0 ; i < memptr -> usercount ; i++){
+	//for(i = 0 ; i < memptr -> usercount ; i++){
+	for(i = 0 ; i < 30 ; i++){
 		if(memptr -> user[i].sendflag > 0){
 			//send to me !!
-			for(j = 0 ; j < memptr -> user[i].msg[my_userid_global].msgcount ; j++){
+			//for(j = 0 ; j < memptr -> user[i].msg[my_userid_global].msgcount ; j++){
+			for(j = 0 ; j < 10 && memptr -> user[i].msg[my_userid_global].msgcount > 0 ; j++){
 				write((memptr -> user[id_idx(my_userid_global)].fd),
-					(memptr -> user[i].msg[my_userid_global].message[j]), 1024);
+					(memptr -> user[i].msg[my_userid_global].message[j]), strlen(memptr -> user[i].msg[my_userid_global].message[j]));
 				memset(memptr -> user[i].msg[my_userid_global].message[j], 0, sizeof(memptr -> user[i].msg[my_userid_global].message[0]));
+				(memptr -> user[i].sendflag) --;
+				(memptr -> user[i].msg[my_userid_global].msgcount)--;
 			}
-			(memptr -> user[i].sendflag) -= (memptr -> user[i].msg[my_userid_global].msgcount);
-			(memptr -> user[i].msg[my_userid_global].msgcount) = 0;
 			//total msg < msg to a specific target
 			if((memptr -> user[i].sendflag) < 0){
 				err_dump("total msg < msg to a specific target");
@@ -467,7 +482,7 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	sort_user(*usercount);
 }
 void del_user(int fd, int *usercount){
-	int del_idx = my_userid_global;
+	int del_idx = id_idx(my_userid_global);
 	memptr -> user[del_idx].pid = -1;
 	memptr -> user[del_idx].id = 1000;
 	memptr -> user[del_idx].fd = -1;
@@ -537,6 +552,7 @@ int main(int argc, char* argv[])
 			add_user(cli_addr, &(memptr -> usercount), newsockfd);
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
+			login_broadcast(my_userid_global);
 			write(newsockfd, "% ", 2);
 			//proccess requests
 			process_request(newsockfd);
