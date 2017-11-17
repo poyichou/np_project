@@ -224,6 +224,12 @@ void logout_yell(int myid){
 	snprintf(msg, sizeof(msg), "*** User '%s' left. ***\n", memptr -> user[myidx].name);
 	simple_yell(myid, msg);
 }
+void initialize_env(){
+	clearenv();
+	if(setenv("PATH", "bin:.", 1) != 0){//failed
+		err_dump("setenv failed");
+	}
+}
 void broadcast(int myfd, char* line){
 	int myidx = id_idx(my_userid_global);
 	//*** IamUser yelled ***: Hi everybody
@@ -546,6 +552,7 @@ int main(int argc, char* argv[])
 			err_dump("fork error");
 		}else if(pid == 0){
 			close(msockfd);
+			initialize_env();
 			//get shared memory
 			get_shared_mem();
 			//add a user
