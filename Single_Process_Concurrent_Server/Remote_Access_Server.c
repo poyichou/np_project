@@ -48,18 +48,17 @@ void close_user_pipe(int myid, int in_userid, int out_userid){
 int check_arg_valid(int sockfd, char* arg){
 	int myidx = fd_idx(sockfd);
 	char *temp_path = malloc(strlen(path[user[myidx].id]) + 1);
+	
 	strcpy(temp_path, path[user[myidx].id - 1]);
-	char *buff;
-	buff = strtok(temp_path, ":");
-	while(buff != NULL)
-	{
-		char file[(strlen(buff) + strlen("/") + strlen(arg) + 1)];
-		snprintf(file, sizeof(file), "%s/%s", buff, arg);
+	
+	int i = 0;
+	for(i = 0 ; i < 30 && user[myidx].Path[i][0] != 0 ; i++){
+		char file[(strlen(user[myidx].Path[i]) + strlen("/") + strlen(arg) + 1)];
+		snprintf(file, sizeof(file), "%s/%s", user[myidx].Path[i], arg);
 		if(access(file, X_OK) == 0){
 			free(temp_path);
 			return 0;
 		}
-		buff = strtok(NULL, ":");
 	}
 	free(temp_path);
 	return -1;
@@ -78,13 +77,13 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	char oneline[strlen(line) + 1];
 	strcpy(oneline, line);
 	buff = strtok(line, " ");
-	if(check_arg_valid(sockfd, buff) != 0){
-		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
-		return -1;
-	}
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
 	arg[argcount] = NULL;
+	if(check_arg_valid(sockfd, arg[0]) != 0){
+		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+		return -1;
+	}
 	while(1)//not cmd: > < |n |
 	{
 		buff = strtok(NULL, " ");
@@ -219,13 +218,13 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			infile = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(infile, buff);
 		}else if(buff != NULL){
-			if(argcount == 0 && check_arg_valid(sockfd, buff) != 0){
-				err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
-				return -1;
-			}
 			arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(arg[argcount++], buff);
 			arg[argcount] = NULL;
+			if(argcount == 0 && check_arg_valid(sockfd, arg[0]) != 0){
+				err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+				return -1;
+			}
 		}
 	}
 	return 0;

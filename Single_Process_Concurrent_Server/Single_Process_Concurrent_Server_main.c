@@ -113,7 +113,8 @@ void set_env(int sockfd, char* line){
 		write(sockfd, "no value", (strlen("no value")) * sizeof(char));
 	}else{// has value
 		if(strcmp(vname, "PATH") == 0){
-			strcpy(path[user[fd_idx(sockfd)].id], vvalue);
+			strcpy(path[user[fd_idx(sockfd)].id - 1], vvalue);
+			set_Path_to_user(sockfd, vvalue);
 		}else if(setenv(vname, vvalue, 1) != 0){//failed
 			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
 		}
@@ -435,6 +436,23 @@ void del_user(int fd, int *usercount){
 	(*usercount)--;
 
 }
+void set_Path_to_user(int sockfd, char *Path){
+	int myidx = fd_idx(sockfd);
+	char *temp_path = malloc(strlen(path[user[myidx].id]) + 1);
+	strcpy(temp_path, path[user[myidx].id - 1]);
+	char *buff;
+	int i = 0;
+	buff = strtok(temp_path, ":");
+	while(buff != NULL)
+	{
+		snprintf(user[myidx].Path[i], sizeof(user[myidx].Path[i]), "%s", buff);
+		buff = strtok(NULL, ":");
+		i++;
+	}
+	memset(user[myidx].Path[i], 0, sizeof(user[myidx].Path[i]));
+	free(temp_path);
+
+}
 int main(int argc, char* argv[])
 {
 	memset(user_pipefd, 0, sizeof(user_pipefd));
@@ -472,6 +490,7 @@ int main(int argc, char* argv[])
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 			login_broadcast(newsockfd);
 			strcpy(path[user[fd_idx(newsockfd)].id - 1], "bin:.");
+			set_Path_to_user(newsockfd, path[user[fd_idx(newsockfd)].id - 1]);
 			write(newsockfd, "% ", 2);
 		}
 		//proccess requests

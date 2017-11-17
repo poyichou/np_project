@@ -13,6 +13,7 @@ struct User{
 	char name[20];//user name
 	char ip_port[30];//<ip>/<port>
 	struct numbered_pipe_command command[1000];
+	char Path[30][256];
 };
 void err_dump(char* msg);
 int passiveTCP(int port, int qlen);
@@ -34,3 +35,4 @@ void sort_user(int usercount);
 int min_unused_user_id(int *usercount);
 void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd);
 void del_user(int fd, int *usercount);
+void set_Path_to_user(int sockfd, char *Path);
