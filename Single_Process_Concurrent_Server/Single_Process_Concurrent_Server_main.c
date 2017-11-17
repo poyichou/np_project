@@ -19,7 +19,8 @@ const char WELCOME_MESSAGE[] =	"****************************************\n"
 
 struct User user[30];
 int usercount = 0;
-
+//simulate env variable
+char path[30][100];
 //user_pipefd[from user id][to user id]
 int user_pipefd[31][31][2];
 
@@ -73,6 +74,13 @@ void print_env(int sockfd, char *line){
 		char* vvalue = getenv(vname);
 		if(vvalue == NULL){
 			write(sockfd, "There is no match", (strlen("There is no match")) * sizeof(char));
+		}else if(strcmp(vname, "PATH") == 0){
+			char msg[strlen("PATH") + strlen("=") + strlen(path[user[fd_idx(sockfd)].id]) + strlen("\n") + 1];
+			snprintf(msg, sizeof(msg), "PATH=%s", path[user[fd_idx(sockfd)].id]);
+			wc = write(sockfd, msg, (strlen(msg)) * sizeof(char));
+			if(wc < 0){
+				err_dump_sock(sockfd, "write error");
+			}
 		}else{
 			char* writestr;
 			writestr = malloc((strlen(vname) + strlen("=") + strlen(vvalue) + strlen("\n") + 1) * sizeof(char));
@@ -104,7 +112,9 @@ void set_env(int sockfd, char* line){
 	if(vvalue == NULL){// no value
 		write(sockfd, "no value", (strlen("no value")) * sizeof(char));
 	}else{// has value
-		if(setenv(vname, vvalue, 1) != 0){//failed
+		if(strcmp(vname, "PATH") == 0){
+			strcpy(path[user[fd_idx(sockfd)].id], vvalue);
+		}else if(setenv(vname, vvalue, 1) != 0){//failed
 			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
 		}
 	}
@@ -428,6 +438,7 @@ void del_user(int fd, int *usercount){
 int main(int argc, char* argv[])
 {
 	memset(user_pipefd, 0, sizeof(user_pipefd));
+	memset(path, 0, sizeof(path));
 	int msockfd;//master sock
 	struct sockaddr_in cli_addr;
 	fd_set rfds; // read file descriptor set
@@ -460,6 +471,7 @@ int main(int argc, char* argv[])
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 			login_broadcast(newsockfd);
+			strcpy(path[user[fd_idx(newsockfd)].id], "bin:.");
 			write(newsockfd, "% ", 2);
 		}
 		//proccess requests

@@ -15,6 +15,7 @@ struct numbered_pipe_command command[1000];
 extern struct User user[30];
 //user_pipefd[from user id][to user id]
 extern int user_pipefd[31][31][2];
+extern char path[30][100];
 int pipefd[1000][2];
 int cmdcount = 0;
 char *pathes[256];
@@ -313,6 +314,9 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 			dup2(sockfd, 1);
 		}
 		dup2(sockfd, 2);
+		if(setenv("PATH", path[user[fd_idx(sockfd)].id], 1) != 0){//failed
+			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+		}
 		execvp(arg[0], arg);
 		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
 		exit(1);
@@ -363,6 +367,9 @@ int my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in
 		}
 		//execute
 		dup2(sockfd, 2);
+		if(setenv("PATH", path[user[fd_idx(sockfd)].id], 1) != 0){//failed
+			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+		}
 		execvp(arg[0], arg);
 		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
 		exit(1);
