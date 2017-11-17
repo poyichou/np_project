@@ -26,7 +26,6 @@ struct Shared_Mem *memptr;
 int my_userid_global;
 int line_offset = 0;
 int shmid;
-int oldest_flag = 0;
 int passiveTCP(int port, int qlen){
 	int sockfd;
 	struct sockaddr_in  serv_addr;
@@ -107,16 +106,6 @@ void set_env(int sockfd, char* line){
 		}
 	}
 }
-int fd_idx(int fd){
-	int i;
-	for(i = 0 ; i < memptr -> usercount ; i++){
-		//find myself
-		if(memptr -> user[i].fd == fd){
-			return i;
-		}
-	}
-	return -1;
-}
 int id_idx(int id){
 	int i;
 	for(i = 0 ; i < memptr -> usercount ; i++){
@@ -171,7 +160,7 @@ void tell(int myfd, char* line){
 	if(buff == NULL)
 		err_dump("parse tell error");
 	userid = atoi(buff);
-	int myidx = fd_idx(myfd);
+	int myidx = id_idx(my_userid_global);
 	//*** IamUser told you ***: Hello World.
 	char msg[strlen("***  told you ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
 	if(check_id_exist(myfd, buff) < 0){//user not exist
@@ -205,7 +194,7 @@ void simple_broadcast(int myid, char* msg){
 	}
 }
 void yell(int myfd, char* line){
-	int myidx = fd_idx(myfd);
+	int myidx = id_idx(my_userid_global);
 	//*** IamUser yelled ***: Hi everybody
 	char msg[strlen("***  yelled ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
 	char* buff;
@@ -224,7 +213,7 @@ void yell(int myfd, char* line){
 	//simple_yell(myfd, "% ");
 }
 void broadcast(int myfd, char* line){
-	int myidx = fd_idx(myfd);
+	int myidx = id_idx(my_userid_global);
 	//*** IamUser yelled ***: Hi everybody
 	char msg[strlen("***  yelled ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
 	char* buff;
@@ -251,11 +240,11 @@ void name(int myfd, char* line){
 		if(memptr -> user[i].fd != myfd && strcmp(memptr -> user[i].name, name) == 0){
 			char msg[strlen("*** User '' already exists. ***\n") + strlen(name) + 1];
 			snprintf(msg, sizeof(msg), "*** User '%s' already exists. ***\n", name);
-			simple_tell(memptr -> user[fd_idx(myfd)].id, memptr -> user[fd_idx(myfd)].id, msg);
+			simple_tell(memptr -> user[id_idx(my_userid_global)].id, memptr -> user[id_idx(my_userid_global)].id, msg);
 			return;
 		}
 	}
-	int myidx = fd_idx(myfd);
+	int myidx = id_idx(my_userid_global);
 	strcpy(memptr -> user[myidx].name, name);
 	//yell *** User from (IP/port) is named '(name)'. ***
 	char msg[strlen("*** User from  is named ''. ***\n") + strlen(memptr -> user[myidx].ip_port) + strlen(name) + 1];
@@ -265,6 +254,7 @@ void name(int myfd, char* line){
 }
 void print_all_user(int myfd){
 	int i = 0;
+	int myid = memptr -> user[id_idx(my_userid_global)].id;
 	char msg[3 + 1 + 20 + 1 + 6 + 1 + strlen("<-me") + 2];
 	write(myfd, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n", strlen("<ID>\t<nickname>\t<IP/port>\t<indicate me>\n"));
 	for(i = 0 ; i < memptr -> usercount ; i++){
@@ -272,11 +262,11 @@ void print_all_user(int myfd){
 		snprintf(msg, sizeof(msg), "%d\t%s\t%s", memptr -> user[i].id,
 												 memptr -> user[i].name, 
 												 memptr -> user[i].ip_port);
-		if(memptr -> user[i].fd == myfd){
+		if(memptr -> user[i].id == myid){
 			strcat(msg, "\t<-me");
 		}
 		strcat(msg, "\n");
-		simple_tell(memptr -> user[fd_idx(myfd)].id, memptr -> user[fd_idx(myfd)].id, msg);
+		simple_tell(memptr -> user[id_idx(my_userid_global)].id, memptr -> user[id_idx(my_userid_global)].id, msg);
 	}
 }
 void detatch_and_delete(){
@@ -355,34 +345,11 @@ void recv_msg(){
 		}
 	}
 }
-//server would get shm only at this function and detach before returning this function
-void server_close_fd(){
-	int i;
-	//get, attach
-	get_shared_mem();
-	for(i = 0 ; i < 30 ; i++){
-		if(memptr -> to_close_fd[i] == 0){
-		//	break;
-			;
-		}else{
-			if(close(memptr -> to_close_fd[i]) < 0){
-				err_dump("server_close_fd error");
-			}
-			memptr -> to_close_fd[i] = 0;
-		}
-	}
-	//detach
-	detatch_and_delete();
-	//if(shmdt(memptr) < 0) 
-	//	err_dump("server: can't detach shared memory");
-}
 void reaper(int signo){
 	if(signo == SIGCHLD){
 		union wait status;
 		while(wait3(&status, WNOHANG, (struct rusage*)0) >= 0)
 			/*empty*/;
-		if(oldest_flag == 0)
-			server_close_fd();
 	}else if(signo == SIGUSR1){//receive from tell, yell
 		recv_msg();
 	}
@@ -499,19 +466,9 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	(*usercount)++;
 	sort_user(*usercount);
 }
-void append_to_close_fd(int fd){
-	int i;
-	for(i = 0 ; i < 30 ; i++){
-		if(memptr -> to_close_fd[i] == 0){
-			memptr -> to_close_fd[i] = fd;
-			break;
-		}
-	}
-}
 void del_user(int fd, int *usercount){
-	append_to_close_fd(fd);
-	int del_idx = fd_idx(fd);
-	memptr -> user[*usercount].pid = -1;
+	int del_idx = my_userid_global;
+	memptr -> user[del_idx].pid = -1;
 	memptr -> user[del_idx].id = 1000;
 	memptr -> user[del_idx].fd = -1;
 	memset(memptr -> user[del_idx].name, 0, sizeof(memptr -> user[del_idx].name));
@@ -573,7 +530,6 @@ int main(int argc, char* argv[])
 		if((pid = fork()) < 0){
 			err_dump("fork error");
 		}else if(pid == 0){
-			oldest_flag = 1;
 			close(msockfd);
 			//get shared memory
 			get_shared_mem();
@@ -586,5 +542,6 @@ int main(int argc, char* argv[])
 			process_request(newsockfd);
 			exit(0);
 		}
+		close(newsockfd);
 	}
 }
