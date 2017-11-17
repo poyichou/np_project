@@ -336,15 +336,20 @@ int build_in_or_command(int sockfd, char* line, int len){
 }
 void recv_msg(){
 	int i;
+	int j;
 	for(i = 0 ; i < memptr -> usercount ; i++){
 		if(memptr -> user[i].sendflag > 0){
 			//send to me !!
-			if(memptr -> user[i].msg[my_userid_global].msgcount > 0){
+			for(j = 0 ; j < memptr -> user[i].msg[my_userid_global].msgcount ; j++){
 				write((memptr -> user[id_idx(my_userid_global)].fd),
-					(memptr -> user[i].msg[my_userid_global].message[0]), 1024);
-				memset(memptr -> user[i].msg[my_userid_global].message[0], 0, sizeof(memptr -> user[i].msg[my_userid_global].message[0]));
-				(memptr -> user[i].msg[my_userid_global].msgcount)--;
-				(memptr -> user[i].sendflag)--;
+					(memptr -> user[i].msg[my_userid_global].message[j]), 1024);
+				memset(memptr -> user[i].msg[my_userid_global].message[j], 0, sizeof(memptr -> user[i].msg[my_userid_global].message[0]));
+			}
+			(memptr -> user[i].sendflag) -= (memptr -> user[i].msg[my_userid_global].msgcount);
+			(memptr -> user[i].msg[my_userid_global].msgcount) = 0;
+			//total msg < msg to a specific target
+			if((memptr -> user[i].sendflag) < 0){
+				err_dump("total msg < msg to a specific target");
 			}
 			return;
 		}
