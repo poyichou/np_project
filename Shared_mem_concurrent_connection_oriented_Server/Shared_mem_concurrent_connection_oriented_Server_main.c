@@ -330,7 +330,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 	}else if(strncmp(line, "tell", 4) == 0){//tell <client id> <msg(may contain white space)>
 		tell(sockfd, line);
 	}else if(strncmp(line, "yell", 4) == 0){//yell <msg>
-		yell(sockfd, line);
+		broadcast(sockfd, line);
 	}else if(strncmp(line, "name", 4) == 0){//name <name>
 		name(sockfd, line);
 	}else if(strncmp(line, "who", 3) == 0){//who
