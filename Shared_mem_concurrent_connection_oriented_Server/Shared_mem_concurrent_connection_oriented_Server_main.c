@@ -516,8 +516,30 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	(*usercount)++;
 	sort_user(*usercount);
 }
+void remove_remain_fifo(int myid){
+	int i = 0;
+	for(i = 1 ; i <= 30 ; i++){
+		if(memptr -> fifo_flag[i][myid] == 1){
+			char file[strlen("/tmp/fifoto") + 2 + 2 + 1];
+			snprintf(file, sizeof(file), "/tmp/fifo%dto%d", i, myid);
+			if(remove(file) < 0){
+				err_dump("remove file error");
+			}
+			memptr -> fifo_flag[i][myid] = 0;
+		}
+		if(memptr -> fifo_flag[myid][i] == 1){
+			char file[strlen("/tmp/fifoto") + 2 + 2 + 1];
+			snprintf(file, sizeof(file), "/tmp/fifo%dto%d", myid, i);
+			if(remove(file) < 0){
+				err_dump("remove file error");
+			}
+			memptr -> fifo_flag[myid][i] = 0;
+		}
+	}
+}
 void del_user(int fd, int *usercount){
 	int del_idx = id_idx(my_userid_global);
+	remove_remain_fifo(my_userid_global);
 	memptr -> user[del_idx].pid = -1;
 	memptr -> user[del_idx].id = 1000;
 	memptr -> user[del_idx].fd = -1;
