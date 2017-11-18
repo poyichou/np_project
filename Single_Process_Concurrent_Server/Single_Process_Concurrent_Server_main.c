@@ -1,5 +1,6 @@
 #define MAXLENG	10000
 #define MAXSIZE 10001
+#define DEMO	1//demo flag for np
 const char WELCOME_MESSAGE[] =	"****************************************\n"
 				"** Welcome to the information server. **\n"
 				"****************************************\n";
@@ -418,11 +419,15 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	user[*usercount].id = min_unused_user_id(usercount);
 	user[*usercount].fd = newsockfd;
 	strcpy(user[*usercount].name, "(no name)");
-	snprintf(port_buff, sizeof(port_buff), "%hu", cli_addr.sin_port);
-	//inet_ntoa is for ipv4
-	strcpy(user[*usercount].ip_port, inet_ntoa(cli_addr.sin_addr));
-	strcat(user[*usercount].ip_port, "/");
-	strcat(user[*usercount].ip_port, port_buff);
+	if(DEMO == 0){
+		snprintf(port_buff, sizeof(port_buff), "%hu", cli_addr.sin_port);
+		//inet_ntoa is for ipv4
+		strcpy(user[*usercount].ip_port, inet_ntoa(cli_addr.sin_addr));
+		strcat(user[*usercount].ip_port, "/");
+		strcat(user[*usercount].ip_port, port_buff);
+	}else if(DEMO == 1){
+		snprintf(user[*usercount].ip_port, sizeof(user[*usercount].ip_port), "CGILAB/511");
+	}
 	(*usercount)++;
 	sort_user(*usercount);
 }

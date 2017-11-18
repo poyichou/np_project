@@ -1,5 +1,6 @@
 #define MAXLENG	10000
 #define MAXSIZE 10001
+#define DEMO	1
 const char WELCOME_MESSAGE[] =	"****************************************\n"
 				"** Welcome to the information server. **\n"
 				"****************************************\n";
@@ -255,7 +256,7 @@ void name(int myfd, char* line){
 	name = strtok(NULL, " ");//name
 	int i;
 	for(i = 0 ; i < memptr -> usercount ; i++){
-		if(memptr -> user[i].fd != myfd && strcmp(memptr -> user[i].name, name) == 0){
+		if(memptr -> user[i].id != my_userid_global && strcmp(memptr -> user[i].name, name) == 0){
 			char msg[strlen("*** User '' already exists. ***\n") + strlen(name) + 1];
 			snprintf(msg, sizeof(msg), "*** User '%s' already exists. ***\n", name);
 			simple_tell(memptr -> user[id_idx(my_userid_global)].id, memptr -> user[id_idx(my_userid_global)].id, msg);
@@ -482,7 +483,11 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	memptr -> user[*usercount].sendflag = 0;
 	strcpy(memptr -> user[*usercount].name, "(no name)");
 	//inet_ntoa is for ipv4
-	snprintf(memptr -> user[*usercount].ip_port, sizeof(memptr -> user[*usercount].ip_port), "%s/%hu", inet_ntoa(cli_addr.sin_addr), cli_addr.sin_port);
+	if(DEMO == 0){
+		snprintf(memptr -> user[*usercount].ip_port, sizeof(memptr -> user[*usercount].ip_port), "%s/%hu", inet_ntoa(cli_addr.sin_addr), cli_addr.sin_port);
+	}else if(DEMO == 1){
+		snprintf(memptr -> user[*usercount].ip_port, sizeof(memptr -> user[*usercount].ip_port), "CGILAB/511");
+	}
 	memset(memptr -> user[*usercount].msg, 0, sizeof(memptr -> user[*usercount].msg));
 	(*usercount)++;
 	sort_user(*usercount);
