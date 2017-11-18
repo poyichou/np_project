@@ -127,13 +127,13 @@ int check_id_exist(int myfd, char *userid){
 		}
 	}
 	//not found
-	if(write(myfd, "Error:user #", strlen("Error:user #")) < 0){
+	if(write(myfd, "*** Error: user #", strlen("*** Error: user #")) < 0){
 		err_dump("write error");
 	}
 	if(write(myfd, userid, strlen(userid)) < 0){
 		err_dump("write error");
 	}
-	if(write(myfd, " dose not exist yet.\n", strlen(" dose not exist yet.\n")) < 0){
+	if(write(myfd, " does not exist yet. ***\n", strlen(" does not exist yet. ***\n")) < 0){
 		err_dump("write error");
 	}
 	return -1;
@@ -156,27 +156,37 @@ void simple_tell(int myid, int targetid, char* msg){
 void tell(int myfd, char* line){
 	char *buff;
 	int userid;
+	char *newline = malloc(strlen(line) + 1);
+	int i = 0;
+	strcpy(newline, line);
 	buff = strtok(line, " ");//buff == tell
+	i += strlen(buff) + 1;
 	buff = strtok(NULL, " ");//buff == userid
+	i += strlen(buff) + 1;
 	if(buff == NULL)
 		err_dump("parse tell error");
 	userid = atoi(buff);
 	int myidx = id_idx(my_userid_global);
 	//*** IamUser told you ***: Hello World.
-	char msg[strlen("***  told you ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
+	char msg[strlen("***  told you ***: ") + strlen(memptr -> user[myidx].name) + strlen(newline) + 2];
 	if(check_id_exist(myfd, buff) < 0){//user not exist
 		return;
 	}
-	snprintf(msg, sizeof(msg), "*** %s told you ***: ", memptr -> user[myidx].name);
+	snprintf(msg, sizeof(msg), "*** %s told you ***: %s\n", memptr -> user[myidx].name, newline + i);
+	free(newline);
 	//get msg
-	buff = strtok(NULL, " ");
-	while(buff != NULL)
-	{
-		strcat(msg, buff);
-		strcat(msg, " ");
-		buff = strtok(NULL, " ");
-	}
-	strcat(msg, "\n");
+	//buff = strtok(NULL, " ");
+	//if(buff != NULL){
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//while(buff != NULL)
+	//{
+	//	strcat(msg, " ");
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//strcat(msg, "\n");
 	simple_tell(memptr -> user[myidx].id, userid, msg);
 	//simple_tell(user[id_idx(userid)].fd, "% ");
 }
@@ -199,17 +209,24 @@ void yell(int myfd, char* line){
 	//*** IamUser yelled ***: Hi everybody
 	char msg[strlen("***  yelled ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
 	char* buff;
-	snprintf(msg, sizeof(msg), "*** %s yelled ***: ", memptr -> user[myidx].name);
+	char *newline = malloc(strlen(line) + 1);
+	strcpy(newline, line);
 	buff = strtok(line, " ");//"yell"
+	snprintf(msg, sizeof(msg), "*** %s yelled ***: %s\n", memptr -> user[myidx].name, newline + strlen(buff) + 1);
+	free(newline);
 	//get msg
-	buff = strtok(NULL, " ");
-	while(buff != NULL)
-	{
-		strcat(msg, buff);
-		strcat(msg, " ");
-		buff = strtok(NULL, " ");
-	}
-	strcat(msg, "\n");
+	//buff = strtok(NULL, " ");
+	//if(buff != NULL){
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//while(buff != NULL)
+	//{
+	//	strcat(msg, " ");
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//strcat(msg, "\n");
 	simple_yell(memptr -> user[myidx].id, msg);
 	//simple_yell(myfd, "% ");
 }
@@ -236,17 +253,24 @@ void broadcast(int myfd, char* line){
 	//*** IamUser yelled ***: Hi everybody
 	char msg[strlen("***  yelled ***: ") + strlen(memptr -> user[myidx].name) + strlen(line) + 2];
 	char* buff;
-	snprintf(msg, sizeof(msg), "*** %s yelled ***: ", memptr -> user[myidx].name);
+	char *newline = malloc(strlen(line) + 1);
+	strcpy(newline, line);
 	buff = strtok(line, " ");//"yell"
+	snprintf(msg, sizeof(msg), "*** %s yelled ***: %s\n", memptr -> user[myidx].name, newline + strlen(buff) + 1);
+	free(newline);
 	//get msg
-	buff = strtok(NULL, " ");
-	while(buff != NULL)
-	{
-		strcat(msg, buff);
-		strcat(msg, " ");
-		buff = strtok(NULL, " ");
-	}
-	strcat(msg, "\n");
+	//buff = strtok(NULL, " ");
+	//if(buff != NULL){
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//while(buff != NULL)
+	//{
+	//	strcat(msg, " ");
+	//	strcat(msg, buff);
+	//	buff = strtok(NULL, " ");
+	//}
+	//strcat(msg, "\n");
 	simple_broadcast(memptr -> user[myidx].id, msg);
 	//simple_broadcast(myfd, "% ");
 }
