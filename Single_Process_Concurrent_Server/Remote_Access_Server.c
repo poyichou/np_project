@@ -14,7 +14,7 @@
 extern struct User user[30];
 //user_pipefd[from user id][to user id]
 extern int user_pipefd[31][31][2];
-extern char path[30][256];
+extern char path[30][100];
 int pipefd[1000][2];
 int cmdcount = 0;
 
@@ -301,6 +301,11 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 	int refd_in = 0, refd_out = 0;
 	//real command
 	if((*pid = fork()) == 0){
+		//change PATH to which stored for this client
+		if(setenv("PATH", path[user[fd_idx(sockfd)].id - 1], 1) != 0){//failed
+			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+		}
+		
 		//determine_pipe_in_or_file_in
 		if(pipe_in_fd[0] > 0 && infile == NULL){//input is pipe_in
 			if(dup2(pipe_in_fd[0], 0) < 0){
@@ -341,9 +346,6 @@ int my_execvp(int sockfd, int *pid, int *pipe_in_fd, char *infile, char *outfile
 			dup2(sockfd, 1);
 		}
 		dup2(sockfd, 2);
-		if(setenv("PATH", path[user[fd_idx(sockfd)].id - 1], 1) != 0){//failed
-			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
-		}
 		execvp(arg[0], arg);
 		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
 		exit(1);
@@ -358,6 +360,10 @@ int my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in
 	int myidx = fd_idx(sockfd);
 	//child
 	if((*pid = fork()) == 0){
+		//change PATH to which stored for this client
+		if(setenv("PATH", path[user[fd_idx(sockfd)].id - 1], 1) != 0){//failed
+			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+		}
 		//open file //outfile doesn't exist
 		//won't happen while pipe_in exists
 		if(infile != NULL && user[myidx].command[i].pipe_in_fd[0] == 0){//infile
@@ -395,9 +401,6 @@ int my_execvp_cmd(int sockfd, int *pid, int i, char* infile, char* arg[], int in
 		}
 		//execute
 		dup2(sockfd, 2);
-		if(setenv("PATH", path[user[fd_idx(sockfd)].id - 1], 1) != 0){//failed
-			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
-		}
 		execvp(arg[0], arg);
 		err_dump_sock_v(sockfd, "Unknown command: [", arg[0], "].");
 		exit(1);
