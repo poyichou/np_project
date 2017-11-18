@@ -232,11 +232,11 @@ void login_broadcast(int myfd){
 	snprintf(msg, sizeof(msg), "*** User '%s' entered from %s. ***\n", user[myidx].name, user[myidx].ip_port);
 	simple_broadcast(myfd, msg);
 }
-void logout_yell(int myfd){
+void logout_broadcast(int myfd){
 	int myidx = fd_idx(myfd);
 	char msg[strlen("*** User '' left. ***") + 20 + 2];
 	snprintf(msg, sizeof(msg), "*** User '%s' left. ***\n", user[myidx].name);
-	simple_yell(myfd, msg);
+	simple_broadcast(myfd, msg);
 }
 void broadcast(int myfd, char* line){
 	int myidx = fd_idx(myfd);
@@ -498,7 +498,7 @@ int main(int argc, char* argv[])
 			if(fd != msockfd && FD_ISSET(fd, &rfds)){
 				// client type "exit"
 				if(process_request(fd) == 1){
-					logout_yell(fd);
+					logout_broadcast(fd);
 					del_user(fd, &usercount);
 					close(fd);
 					FD_CLR(fd, &afds);
