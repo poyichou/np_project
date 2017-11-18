@@ -369,9 +369,11 @@ void recv_msg(){
 }
 void reaper(int signo){
 	if(signo == SIGCHLD){
-		union wait status;
-		while(wait3(&status, WNOHANG, (struct rusage*)0) >= 0)
-			/*empty*/;
+		//union wait status;
+		int status;
+		waitpid(-1, &status, WNOHANG);
+		//while(wait3(&status, WNOHANG, (struct rusage*)0) >= 0)
+		//	/*empty*/;
 	}else if(signo == SIGUSR1){//receive from tell, yell
 		recv_msg();
 	}
