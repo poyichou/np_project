@@ -321,9 +321,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 	}else if(strncmp(line, "exit", 4) == 0){//exit
 		logout_broadcast(my_userid_global);
 		del_user(sockfd, &(memptr -> usercount));
-		if(shmdt(memptr) < 0) 
-			err_dump("server: can't detach shared memory");
-		//detatch_and_delete();
+		detatch_and_delete();
 		return 1;
 	}else if(strncmp(line, "printenv", 8) == 0){
 		print_env(sockfd, line);
