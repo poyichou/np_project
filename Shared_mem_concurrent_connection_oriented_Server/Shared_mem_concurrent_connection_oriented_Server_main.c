@@ -218,11 +218,11 @@ void login_broadcast(int myid){
 	snprintf(msg, sizeof(msg), "*** User '%s' entered from %s. ***\n", memptr -> user[myidx].name, memptr -> user[myidx].ip_port);
 	simple_broadcast(myid, msg);
 }
-void logout_yell(int myid){
+void logout_broadcast(int myid){
 	int myidx = id_idx(myid);
 	char msg[strlen("*** User '' left. ***") + 20 + 2];
 	snprintf(msg, sizeof(msg), "*** User '%s' left. ***\n", memptr -> user[myidx].name);
-	simple_yell(myid, msg);
+	simple_broadcast(myid, msg);
 }
 void initialize_env(){
 	clearenv();
@@ -318,7 +318,7 @@ int build_in_or_command(int sockfd, char* line, int len){
 		write(sockfd, "\"/\" is blocked\n", strlen("\"/\" is blocked\n"));
 		return 0;
 	}else if(strncmp(line, "exit", 4) == 0){//exit
-		logout_yell(my_userid_global);
+		logout_broadcast(my_userid_global);
 		del_user(sockfd, &(memptr -> usercount));
 		if(shmdt(memptr) < 0) 
 			err_dump("server: can't detach shared memory");
