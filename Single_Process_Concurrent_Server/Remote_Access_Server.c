@@ -163,6 +163,37 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d already exists. ***\n", myid, userid);
 				simple_tell(sockfd, errmsg);
 				return 1;
+			}else if(myid == userid){
+				char errmsg[strlen("*** Error: the pipe #-># should not be the same id. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d should not be the same id. ***\n", myid, userid);
+				simple_tell(sockfd, errmsg);
+				int i;
+				//check if numbered pipe should be execute
+				for(i = 0 ; i < cmdcount ; i++){
+					user[myidx].command[i].idx++;
+					// there's a pipe_in to this cmd // already execute
+					if(user[myidx].command[i].idx == user[myidx].command[i].count){
+						free_command(sockfd, i, &cmdcount);
+						//because of filling back
+						i--;
+					}
+				}
+				return 1;
+			}else if(check_id_exist(sockfd, buff + 1) == -1){
+				//*** Error: user #6 does not exist yet. ***
+				
+				int i;
+				//check if numbered pipe should be execute
+				for(i = 0 ; i < cmdcount ; i++){
+					user[myidx].command[i].idx++;
+					// there's a pipe_in to this cmd // already execute
+					if(user[myidx].command[i].idx == user[myidx].command[i].count){
+						free_command(sockfd, i, &cmdcount);
+						//because of filling back
+						i--;
+					}
+				}
+				return 1;
 			}
 			//yell *** IamUser (#3) just piped 'cat test.html | cat >1' to Iam1 (#1) ***
 			char msg[strlen("***  (#) just piped '' to  (#) ***") + strlen(user[myidx].name) + 2 +	strlen(oneline) + strlen(user[useridx].name) + 2 + 2];
@@ -183,6 +214,37 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				char errmsg[strlen("*** Error: the pipe #-># does not exist yet exist yet. ***\n") + 2 + 2 + 1];
 				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet exist yet. ***\n", userid, myid);
 				simple_tell(sockfd, errmsg);
+				return 1;
+			}else if(myid == userid){
+				char errmsg[strlen("*** Error: the pipe #-># should not be the same id. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d should not be the same id. ***\n", myid, userid);
+				simple_tell(sockfd, errmsg);
+				int i;
+				//check if numbered pipe should be execute
+				for(i = 0 ; i < cmdcount ; i++){
+					user[myidx].command[i].idx++;
+					// there's a pipe_in to this cmd // already execute
+					if(user[myidx].command[i].idx == user[myidx].command[i].count){
+						free_command(sockfd, i, &cmdcount);
+						//because of filling back
+						i--;
+					}
+				}
+				return 1;
+			}else if(check_id_exist(sockfd, buff + 1) == -1){
+				//*** Error: user #6 does not exist yet. ***
+				
+				int i;
+				//check if numbered pipe should be execute
+				for(i = 0 ; i < cmdcount ; i++){
+					user[myidx].command[i].idx++;
+					// there's a pipe_in to this cmd // already execute
+					if(user[myidx].command[i].idx == user[myidx].command[i].count){
+						free_command(sockfd, i, &cmdcount);
+						//because of filling back
+						i--;
+					}
+				}
 				return 1;
 			}
 			//yell *** IamUser (#3) just received from student7 (#7) by 'cat <7' ***
