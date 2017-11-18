@@ -27,6 +27,7 @@ struct Shared_Mem *memptr;
 int my_userid_global;
 int line_offset = 0;
 int shmid;
+char path[30][100];
 int passiveTCP(int port, int qlen){
 	int sockfd;
 	struct sockaddr_in  serv_addr;
@@ -86,6 +87,22 @@ void print_env(int sockfd, char *line){
 		}
 	}
 }
+void set_Path_to_user(){
+	char *Path = getenv("PATH");
+	char *temp_path = malloc(strlen(Path) + 1);
+	strcpy(temp_path, Path);
+	char *buff;
+	int i = 0;
+	buff = strtok(temp_path, ":");
+	while(buff != NULL)
+	{
+		snprintf(path[i], sizeof(path[i]), "%s", buff);
+		buff = strtok(NULL, ":");
+		i++;
+	}
+	memset(path[i], 0, sizeof(path[i]));
+	free(temp_path);
+}
 void set_env(int sockfd, char* line){
 	char tmp_line[MAXSIZE];
 	char* vname, *vvalue;// variable name, value
@@ -104,6 +121,9 @@ void set_env(int sockfd, char* line){
 	}else{// has value
 		if(setenv(vname, vvalue, 1) != 0){//failed
 			write(sockfd, "change failed", (strlen("change failed")) * sizeof(char));
+		}
+		if(strcmp(vname, "PATH") == 0){
+			set_Path_to_user();
 		}
 	}
 }
@@ -247,6 +267,7 @@ void initialize_env(){
 	if(setenv("PATH", "bin:.", 1) != 0){//failed
 		err_dump("setenv failed");
 	}
+	set_Path_to_user();
 }
 void broadcast(int myfd, char* line){
 	int myidx = id_idx(my_userid_global);

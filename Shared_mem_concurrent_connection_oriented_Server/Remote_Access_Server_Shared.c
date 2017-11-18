@@ -18,7 +18,7 @@ extern int my_userid_global;
 //user_pipefd[from user id][to user id]
 int pipefd[1000][2];
 int cmdcount = 0;
-char *pathes[256];
+char extern path[30][100];
 
 void err_dump(char* msg){
 	perror(msg);
@@ -50,6 +50,17 @@ void unlink_user_fifo(int myid, int in_userid){//actually, not use fifo, just no
 		memptr -> fifo_flag[in_userid][myid] = 0;
 	}
 }
+int check_arg_valid(int sockfd, char* arg){
+	int i = 0;
+	for(i = 0 ; i < 30 && path[i][0] != 0 ; i++){
+		char file[(strlen(path[i]) + strlen("/") + strlen(arg) + 1)];
+		snprintf(file, sizeof(file), "%s/%s", path[i], arg);
+		if(access(file, X_OK) == 0){
+			return 0;
+		}
+	}
+	return -1;
+}
 int parser(int sockfd, char* line, int len){//it also call exec
 	char *buff;
 	int pid;
@@ -67,6 +78,10 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 	strcpy(arg[argcount++], buff);
 	arg[argcount] = NULL;
+	if(check_arg_valid(sockfd, arg[0]) != 0){
+		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+		return -1;
+	}
 	while(1)//not cmd: > < |n |
 	{
 		buff = strtok(NULL, " ");
@@ -206,8 +221,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//check if pipe exist
 			if(memptr -> fifo_flag[userid][myid] == 0){
 				//*** Error: the pipe #1->#2 does not exist yet. *** 
-				char errmsg[strlen("*** Error: the pipe #-># does not exist yet exist yet. ***\n") + 2 + 2 + 1];
-				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet exist yet. ***\n", userid, myid);
+				char errmsg[strlen("*** Error: the pipe #-># does not exist yet. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet. ***\n", userid, myid);
 				simple_tell(myid, myid, errmsg);
 				int i;
 				//check if numbered pipe should be execute
@@ -291,6 +306,10 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			arg[argcount] = malloc((strlen(buff) + 1) * sizeof(char));
 			strcpy(arg[argcount++], buff);
 			arg[argcount] = NULL;
+			if(argcount == 0 && check_arg_valid(sockfd, arg[0]) != 0){
+				err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+				return -1;
+			}
 		}
 	}
 	return 0;
