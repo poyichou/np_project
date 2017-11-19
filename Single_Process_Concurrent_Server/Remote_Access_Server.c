@@ -15,8 +15,6 @@ extern struct User user[30];
 //user_pipefd[from user id][to user id]
 extern int user_pipefd[31][31][2];
 extern char path[30][100];
-int pipefd[1000][2];
-int cmdcount = 0;
 
 int err_dump_sock(int sockfd, char* msg){
 	dup2(sockfd, 2);
@@ -82,13 +80,26 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	arg[argcount] = NULL;
 	if(check_arg_valid(sockfd, arg[0]) != 0){
 		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+			int i;
+			int myidx = fd_idx(sockfd);
+			//check if numbered pipe should be execute
+			for(i = 0 ; i < user[myidx].cmdcount ; i++){
+				user[myidx].command[i].idx++;
+				// there's a pipe_in to this cmd // already execute
+				if(user[myidx].command[i].idx == user[myidx].command[i].count){
+					free_command(sockfd, i, &(user[myidx].cmdcount));
+					//because of filling back
+					i--;
+				}
+			}
 		return -1;
 	}
 	while(1)//not cmd: > < |n |
 	{
 		buff = strtok(NULL, " ");
 		if(buff == NULL && argcount > 0){// with pipe before or not, aka "...... | cmd" or "cmd"//no more pipe!!
-			read_timed_command(sockfd, pipe_in_fd, &cmdcount, 0);
+			int myidx = fd_idx(sockfd);
+			read_timed_command(sockfd, pipe_in_fd, &(user[myidx].cmdcount), 0);
 			//real command
 			my_execvp(sockfd, &pid, pipe_in_fd, infile, outfile, arg, in_userid, out_userid);
 			close_user_pipe(user[fd_idx(sockfd)].id, in_userid, out_userid);
@@ -114,19 +125,19 @@ int parser(int sockfd, char* line, int len){//it also call exec
 		}else if(buff[0] == '|' && strlen(buff) >= 1 && argcount > 0){// numbered pipe // store it
 			int myidx = fd_idx(sockfd);
 			//initial a command
-			user[myidx].command[cmdcount].idx = 0;
+			user[myidx].command[user[myidx].cmdcount].idx = 0;
 			//initial_command_count
-			initial_command_count(&(user[myidx].command[cmdcount]), buff);
-			initial_command_refd_pipe_fd(sockfd, cmdcount);
+			initial_command_count(&(user[myidx].command[user[myidx].cmdcount]), buff);
+			initial_command_refd_pipe_fd(sockfd, user[myidx].cmdcount);
 			//put it here to avoid idx++ of this command
-			cmdcount++;
-			read_timed_command(sockfd, user[myidx].command[cmdcount - 1].pipe_in_fd, &cmdcount, 1);
-			mypipe(sockfd, user[myidx].command[cmdcount - 1].pipe_out_fd);
-			exec_result = my_execvp_cmd(sockfd, &pid, cmdcount - 1, infile, arg, in_userid);
+			(user[myidx].cmdcount)++;
+			read_timed_command(sockfd, user[myidx].command[user[myidx].cmdcount - 1].pipe_in_fd, &(user[myidx].cmdcount), 1);
+			mypipe(sockfd, user[myidx].command[user[myidx].cmdcount - 1].pipe_out_fd);
+			exec_result = my_execvp_cmd(sockfd, &pid, user[myidx].cmdcount - 1, infile, arg, in_userid);
 			close_user_pipe(user[fd_idx(sockfd)].id, in_userid, out_userid);
 			in_userid = -1;
 			out_userid = -1;
-			parent_close(sockfd, user[myidx].command[cmdcount - 1].pipe_in_fd, user[myidx].command[cmdcount - 1].pipe_out_fd);
+			parent_close(sockfd, user[myidx].command[user[myidx].cmdcount - 1].pipe_in_fd, user[myidx].command[user[myidx].cmdcount - 1].pipe_out_fd);
 			free(infile);
 			infile = NULL;
 			free_arg(arg, &argcount);
@@ -139,11 +150,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			int i;
 			int myidx = fd_idx(sockfd);
 			//check if numbered pipe should be execute
-			for(i = 0 ; i < cmdcount ; i++){
+			for(i = 0 ; i < user[myidx].cmdcount ; i++){
 				user[myidx].command[i].idx++;
 				// there's a pipe_in to this cmd // already execute
 				if(user[myidx].command[i].idx == user[myidx].command[i].count){
-					free_command(sockfd, i, &cmdcount);
+					free_command(sockfd, i, &(user[myidx].cmdcount));
 					//because of filling back
 					i--;
 				}
@@ -169,11 +180,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				simple_tell(sockfd, errmsg);
 				int i;
 				//check if numbered pipe should be execute
-				for(i = 0 ; i < cmdcount ; i++){
+				for(i = 0 ; i < user[myidx].cmdcount ; i++){
 					user[myidx].command[i].idx++;
 					// there's a pipe_in to this cmd // already execute
 					if(user[myidx].command[i].idx == user[myidx].command[i].count){
-						free_command(sockfd, i, &cmdcount);
+						free_command(sockfd, i, &(user[myidx].cmdcount));
 						//because of filling back
 						i--;
 					}
@@ -184,11 +195,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				
 				int i;
 				//check if numbered pipe should be execute
-				for(i = 0 ; i < cmdcount ; i++){
+				for(i = 0 ; i < user[myidx].cmdcount ; i++){
 					user[myidx].command[i].idx++;
 					// there's a pipe_in to this cmd // already execute
 					if(user[myidx].command[i].idx == user[myidx].command[i].count){
-						free_command(sockfd, i, &cmdcount);
+						free_command(sockfd, i, &(user[myidx].cmdcount));
 						//because of filling back
 						i--;
 					}
@@ -221,11 +232,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				simple_tell(sockfd, errmsg);
 				int i;
 				//check if numbered pipe should be execute
-				for(i = 0 ; i < cmdcount ; i++){
+				for(i = 0 ; i < user[myidx].cmdcount ; i++){
 					user[myidx].command[i].idx++;
 					// there's a pipe_in to this cmd // already execute
 					if(user[myidx].command[i].idx == user[myidx].command[i].count){
-						free_command(sockfd, i, &cmdcount);
+						free_command(sockfd, i, &(user[myidx].cmdcount));
 						//because of filling back
 						i--;
 					}
@@ -236,11 +247,11 @@ int parser(int sockfd, char* line, int len){//it also call exec
 				
 				int i;
 				//check if numbered pipe should be execute
-				for(i = 0 ; i < cmdcount ; i++){
+				for(i = 0 ; i < user[myidx].cmdcount ; i++){
 					user[myidx].command[i].idx++;
 					// there's a pipe_in to this cmd // already execute
 					if(user[myidx].command[i].idx == user[myidx].command[i].count){
-						free_command(sockfd, i, &cmdcount);
+						free_command(sockfd, i, &(user[myidx].cmdcount));
 						//because of filling back
 						i--;
 					}
@@ -528,10 +539,11 @@ void free_command(int sockfd, int idx , int *commandcount){
 	user[myidx].command[i].idx = 0;
 	user[myidx].command[i].count = 0;
 	//command[cmdcount].outfile = NULL;
-	user[myidx].command[cmdcount].pipe_in_fd[0] = 0;
-	user[myidx].command[cmdcount].pipe_in_fd[1] = 0;
-	user[myidx].command[cmdcount].pipe_out_fd[0] = 0;
-	user[myidx].command[cmdcount].pipe_out_fd[1] = 0;
+	//****************************************************I change cmdcount to i here***************************************************************
+	user[myidx].command[i].pipe_in_fd[0] = 0;
+	user[myidx].command[i].pipe_in_fd[1] = 0;
+	user[myidx].command[i].pipe_out_fd[0] = 0;
+	user[myidx].command[i].pipe_out_fd[1] = 0;
 	(*commandcount)--;
 }
 int checkarg(char* str, char* delim, int len){

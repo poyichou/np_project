@@ -80,6 +80,17 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	arg[argcount] = NULL;
 	if(check_arg_valid(sockfd, arg[0]) != 0){
 		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+		int i;
+		//check if numbered pipe should be execute
+		for(i = 0 ; i < cmdcount ; i++){
+			command[i].idx++;
+			// there's a pipe_in to this cmd // already execute
+			if(command[i].idx == command[i].count){
+				free_command(sockfd, i, &cmdcount);
+				//because of filling back
+				i--;
+			}
+		}
 		return -1;
 	}
 	while(1)//not cmd: > < |n |
