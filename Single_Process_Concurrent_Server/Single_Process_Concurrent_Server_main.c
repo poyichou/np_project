@@ -151,13 +151,13 @@ int check_id_exist(int myfd, char *userid){
 		}
 	}
 	//not found
-	if(write(myfd, "Error: user #", strlen("Error: user #")) < 0){
+	if(write(myfd, "*** Error: user #", strlen("*** Error: user #")) < 0){
 		err_dump("write error");
 	}
 	if(write(myfd, userid, strlen(userid)) < 0){
 		err_dump("write error");
 	}
-	if(write(myfd, " dose not exist yet.\n", strlen(" dose not exist yet.\n")) < 0){
+	if(write(myfd, " does not exist yet. ***\n", strlen(" does not exist yet. ***\n")) < 0){
 		err_dump("write error");
 	}
 	return -1;
@@ -455,8 +455,26 @@ void add_user(struct sockaddr_in cli_addr, int *usercount, int newsockfd){
 	(*usercount)++;
 	sort_user(*usercount);
 }
+void remove_remain_fifo(int myid){
+	int i = 0;
+	for(i = 1 ; i <= 30 ; i++){
+		if(user_pipefd[i][myid][0] > 0){
+			close(user_pipefd[i][myid][0]);
+			user_pipefd[i][myid][0] = 0;
+			close(user_pipefd[i][myid][1]);
+			user_pipefd[i][myid][1] = 0;
+		}
+		if(user_pipefd[myid][i][0] > 0){
+			close(user_pipefd[myid][i][0]);
+			user_pipefd[myid][i][0] = 0;
+			close(user_pipefd[myid][i][1]);
+			user_pipefd[myid][i][1] = 0;
+		}
+	}
+}
 void del_user(int fd, int *usercount){
 	int del_idx = fd_idx(fd);
+	remove_remain_fifo(user[fd_idx(fd)].id);
 	user[del_idx].id = 1000;
 	user[del_idx].fd = -1;
 	memset(user[del_idx].name, 0, sizeof(user[del_idx].name));

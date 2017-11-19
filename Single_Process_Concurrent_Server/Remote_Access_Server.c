@@ -222,8 +222,8 @@ int parser(int sockfd, char* line, int len){//it also call exec
 			//check if pipe exist
 			if(user_pipefd[userid][myid][0] == 0){
 				//*** Error: the pipe #1->#2 does not exist yet. *** 
-				char errmsg[strlen("*** Error: the pipe #-># does not exist yet exist yet. ***\n") + 2 + 2 + 1];
-				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet exist yet. ***\n", userid, myid);
+				char errmsg[strlen("*** Error: the pipe #-># does not exist yet. ***\n") + 2 + 2 + 1];
+				snprintf(errmsg, sizeof(errmsg), "*** Error: the pipe #%d->#%d does not exist yet. ***\n", userid, myid);
 				simple_tell(sockfd, errmsg);
 				return 1;
 			}else if(myid == userid){
