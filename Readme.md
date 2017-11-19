@@ -1,5 +1,4 @@
 # NP Project2  
-test  
 __This is a project based on NP Project1__  
 __In this project, the function of Remote-Access-Server is extended in two version__  
 *	__concurrent connection-oriented paradigm with shared memory__  
