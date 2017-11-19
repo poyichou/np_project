@@ -1,132 +1,64 @@
-# This is NP Project1  
-#### When the server accept a client, it fork a child to handle request from client by calling *proccess_request*.  
+# NP Project2  
+__This is a project based on NP Project1__  
+__In this project, the function of Remote-Access-Server is extended in two version__  
+*	__concurrent connection-oriented paradigm with shared memory__  
+*	__single-process concurrent paradigm__  
   
-# proccess_request:  
-It first send a welcome message to client. Then start receiving message from client.  
-### It hanndle 3 types of message:  
-*	#### \"xxxxxx\\r\\n\":  	
-	excellent one line of message with a newline.  
-*	#### \"xxxxxx\\r\\nxxxxxxx\":  
-	Could seldom happen, read many packet one time. In this case, Only use string before *\\n* and leave the rest be concatonated by next message read.  
-*	#### \"xxxxxxxxxxxxxx\":
-	No newline, means message be split into several packets. In this case, continue reading until reach a newline.  
+__In this project, server can handle mutiple client__  
+__Beside functions in NP Project1, it have other functions__  
+*	__who:__  
+	Show all user online, include clients' id, name, ip/port, and indicate himself  
+*	__name:__  
+	Rename it self, every client is named (no name) after connection  
+	The name client type cannot be the same as other name of user after succeeded, broadcast to every client online include himself  
+*	__tell:__  
+	With user id provide after tell, client can tell a specific client online  
+*	__yell:__  
+	Broadcast message to all clients including himself  
+*	__command >n:__  
+	n is user id, it pipe result of command to the client online having the user id n after succeed, broadcast to all client including himself  
+*	__command <n:__  
+	n is user id, it receive message piped from the client having the user id n as input of command after succeed, broadcast to all client including himself  
+	"command <n >N", "command >N <n", "command1 | ... | commandN >n", "command <n | ...", "... | command <n | ..." are valid  
+## concurrent connection-oriented paradigm with shared memory  
+When a connection(client) comes in, it fork a child to handle the client  
+Every client has unique environment variables  
   
-### After receiving message from client, server will first remove \\r and \\n, then catogorize this meesage into five case:  
-*	#### \"/\":  
-	Return error message because project spec forbid proccessing this message.  
-*	#### Start with \"exit\":  
-	Exit and close connection normally.  
-*	#### Start with \"printenv\":  
-	Run build-in function. If there's no string after it, it print all environment variables. If there's a varible name after it, it print value of this variable if this variable exists, and print not match otherwise.  
-*	#### Start with \"setenv\":  
-	It should followed by a variable name and a value separated by whitespace, and set this variable to the value.  
-*	#### Other:  
-	pass it to function \"parser\"  
+After fork mentioned above, all environment variables of client is clear except PATH is set to bin:.  
   
-# parser:  
-### It is like a shell, parse one line of message by whitespace into tokens, regarding them as *\"command\"*s separated by \"|\" or \"|n\" and do pipe, number pipe, exec if needed.  
-```  
-numbered pipe: A new type of pipe in this project. Having symbol such as \"|n\", where n is an integer.  
-"|n" means the stdout of last command should be piped to next nth legal process, where 1 <= N <= 1000.  
-"|1" has the same behavior of "|"  
-If there is any error in a input line, the line number still count 1. If the nth command is invalid, then the pipe just close.  
-For example:  
-	%ls |2  
-	% ctt               <= unknown command, process number is counted  
-	Unknown command: [ctt].  
-	% nl  
-	1 file1  
-	2 file2  
-Also, it is fine that many commands pipe to the same command  
-	%ls |3 ls | nl | nl  
-	1 file1  
-	2 file2  
-	3 1 file1  
-	4 2 file2  
-```  
-### It catogorize tokens in to four case:  
-*	#### \">\":  
-	Means token after it is a file name should be writen. When it reach it, it read next token as output file name.   
-*	#### \"<\":   
-	Means token after it is a file name should be read. When it reach it , it read next token as input file name.   
-*	#### \"|\" and \"|n\":  
-	Means pipe occur, where n is a number, it then store some information into a structure *numbered_pipe_command* for this command, which include:  
-	*	int idx:		set it to 0.  
-	*	int count:		set it to n or 1 if it is \"|\" follows the tokens.  
-	*	int pipe_in_fd[2]:	set to {0,0}  
-		pipe_in_fd is used for storing data read from other command, namely, pipe from other command.  
-	*	int pipe_out_fd[2]:set to {0, 0}  
-		pipe_out_fd is used for storing data the command self produce after execute.  
-*	#### Other:  
-	Store them as argments (or tokens) of program executed afterword.  
+It create one block of shared memory for all clients(childs)  
   
-### It execute command with *\"execvp\"* in two condition:  
-*	#### Meets \"|\" or \"|n\"  
-	It tells parser that tokens it has read should be seems as one command:  
-	As mentioned above, it first stores some information into a structure *numbered_pipe_command* for this command.
-	After storing, do idx++ for every *numbered_pipe_command* stored before this command.  
-	For every *numbered_pipe_command*, if idx == count, means the data stored in fd:pipe_out_fd[0] should be read.  
-	If there is no command such that idx == count, then it is OK that input file exists for current command.  
-	So it has two cases:  
-	*	There is any *numbered_pipe_command* for a command such that idx == count:  
-		Read data from pipe_out_fd[0] for all match command and write it to pipe_in_fd[1] of current *numbered_pipe_command*, and then *dup2* pipe_in_fd[0] to 0.  
-	*	There is no *numbered_pipe_command* for a command such that idx == count:  
-		If there is an input file, set *refd_in* to the fd get after open the file, then *dup2* *refd_in* to 0.  
-		***************************************************************************************  
-		#### *So the structure for the first condition may like this*  
-		*pipe_out_fd (of command1) =>*  
-		*pipe_out_fd (of command2) => read => write => current pipe_in_fd => current command => current pipe_out_fd*  
-		*pipe_out_fd (of command3) =>*  
-		  
-		#### *The structure for the second condition may like this if there is an input file*  
-		*refd_in => current command => currnet pipe_out_fd*  
-		  
-		#### *The structure for the second condition may like this if there is no input file*  
-		*current command => currnet pipe_out_fd*  
-		***************************************************************************************  
-	  
-	Then, *dup2* pipe_out_fd[1] to 1, and execute this command with execvp.  
-	  
-*	#### Meets the final token of one line:	
-	When it reach the final token of *Other* type, it means that it reach the final command, which will not pipe to any other command.  
-	Before executing it, as done above, for every *numbered_pipe_command*, do idx++.  
-	if idx == count, means that the data stored in pipe_out_fd[0] should be read.  
-	Also this is the only time that it could exist output file.  
-	So, it has some cases:  
-	*	There is any *numbered_pipe_command* for a command such that idx == count and there is an ouput file:  
-		Read data from pipe_out_fd[0] for all match command and write it to pipe_in_fd[1] of current *numbered_pipe_command*, *dup2* pipe_in_fd[0] to 0.  
-		Set *refd_out* to the fd get after open the file, then *dup2* *refd_out* to 1.  
-	*	There is any *numbered_pipe_command* for a command such that idx == count and there is no ouput file:  
-		Read data from pipe_out_fd[0] for all match command and write it to pipe_in_fd[1] of current *numbered_pipe_command*, *dup2* pipe_in_fd[0] to 0.  
-		*dup2* *sockfd* to 1.  
-	*	There is no *numbered_pipe_command* for a command such that idx == count and there is an ouput file:  
-		Set *refd_in* to the fd get after open the file, then *dup2* *refd_in* to 0.  
-		Set *refd_out* to the fd get after open the file, then *dup2* *refd_out* to 1.  
-	*	There is no *numbered_pipe_command* for a command such that idx == count and there is no ouput file:  
-		If there is an input file, set *refd_in* to the fd get after open the file, then *dup2* *refd_in* to 0.  
-		*dup2* *sockfd* to 1.  
-		***************************************************************************************  
-		#### *So the structure for the first condition may like this*  
-		*pipe_out_fd (of command1) =>*  
-		*pipe_out_fd (of command2) => read => write => current pipe_in_fd => current command => output file*  
-		*pipe_out_fd (of command3) =>*  
-		  
-		#### *The structure for the second condition may like this if there is an input file*  
-		*pipe_out_fd (of command1) =>*  
-		*pipe_out_fd (of command2) => read => write => current pipe_in_fd => current command => sockfd of client*  
-		*pipe_out_fd (of command3) =>*  
-		  
-		#### *The structure for the third condition may like this if there is an input file*  
-		*refd_in => current command => output file*  
-		  
-		#### *The structure for the third condition may like this if there is no input file*  
-		*current command => output file*  
-		  
-		#### *The structure for the forth condition may like this if there is an input file*  
-		*refd_in => current command => sockfd of client*  
-		  
-		#### *The structure for the forth condition may like this if there is no input file*  
-		*current command => sockfd of client*  
-		***************************************************************************************  
-	  
-	And then, execute this command with execvp.  
+When __tell__ raised, the child store the message in the shared memory in place of the specific client and send signal to the specific client to inform it receiving message with kill(\<the pid of the specific client(child)\>, SIGUSER1)  
+  
+When __yell__ raised, the child store the message in the shared memory in place of all clients and raise __tell__ in a *for loop* for all client including itself  
+  
+When __name__ raised, the child first check every client's name stored in the shared memory, if not repeated, store the name in the shared memory in place of the client and raise __yell__  
+  
+When __who__ raised, the child check user list in the shared memory and print them all, and if one of them have the same user id, also print "<-me" after it to indicate the client  
+  
+When __command >n__ raised, the child open a file in /tmp named "/tmp/fifo\<the user id of the client\>\<n\>" with `fd = open(file, O_WRONLY | O_CREAT )`, after `dup2(fd, 1)`, call execvp()  
+  
+When __command <n__ raised, the child open file named "/tmp/fifo\<n\>\<the user id of the client\>" with `fd = open(file, O_RDONLY)`, after `dup2(fd, 0)`, all execvp() after execvp(), remove the file  
+
+__After a client exit, clear client information, and remove file in /tmp if there exist file such named fifo\<the user id of the client\>\<any user id\> or fifo\<any user id\>\<the user id of the client\>__  
+
+## single-process concurrent paradigm  
+When a connection(client) comes in, it give it a file descript number  
+Use select() to monitor every file descript number used, include fd for clients and hadling coming connection  
+Because it has only one process, it cannot actually let every client has unique environment variables, however, it store PATH for every client individually to simulate all clients have unique PATH, before calling execvp(), it first setenv("PATH", \<PATH value for the client\>, 1).
+  
+When __tell__ raised, the child get the fd of the target client stored in `struct User user[]`, and then simply use `write(<targetfd>, message, strlen(message))`  
+  
+When __yell__ raised, raise __tell__ in a *for loop* for all client including itself  
+  
+When __name__ raised, the child first check every client's name stored in `struct User user[]`, if not repeated, store the name in `struct User user[]` in place of the client and raise __yell__  
+  
+When __who__ raised, the child check user list in the shared memory and print them all, and if one of them have the same user id, also print "<-me" after it to indicate the client  
+  
+When __command >n__ raised, `pipe(pipefd[<the user id of the client>][n])`, and `dup2(pipefd[<the user id of the client>][n][1], 1)` then call execvp()  
+  
+When __command <n__ raised, `dup2(pipefd[<the user id of the client>][n][0], 0)`, then call execvp(), and then `close(pipefd[<the user id of the client>][n][0])` and `close(pipefd[<the user id of the client>][n][1])`  
+  
+__After a client exit, clear client information,__  
+__if there exist pipefd[\<the user id of the client\>][\<any user id\>],__ `close(pipefd[<the user id of the client>][<any user id>][0])` __and__ `close(pipefd[<the user id of the client>][<any user id>][1])`  
+__if there exist pipefd[\<any user id\>][\<the user id of the client\>],__ `close(pipefd[<any user id>][<the user id of the client>][0])` __and__ `close(pipefd[<any user id>][<the user id of the client>][1])`  

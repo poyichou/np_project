@@ -1,0 +1,2 @@
+all:Remote_Access_Server_Shared.c Remote_Access_Server_Shared.h Shared_mem_concurrent_connection_oriented_Server_main.c Shared_mem_concurrent_connection_oriented_Server_main.h 
+	gcc Remote_Access_Server_Shared.c Shared_mem_concurrent_connection_oriented_Server_main.c -o Shared_mem_concurrent_connection_oriented_Server -Wall -g
