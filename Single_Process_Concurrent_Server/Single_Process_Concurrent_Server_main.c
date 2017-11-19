@@ -342,6 +342,14 @@ int build_in_or_command(int sockfd, char* line, int len){
 	write(sockfd, "% ", 2);
 	return 0;
 }
+void chdir_to_ras(int sockfd){
+	if(chdir(getenv("HOME")) < 0){
+		err_dump("cd error");
+	}
+	if(chdir("ras") < 0){
+		err_dump("cd error");
+	}
+}
 int process_request(int sockfd){
 	//deal with 3 case: 
 	//		1.	aaaaaaaaa\r\n
@@ -533,6 +541,7 @@ int main(int argc, char* argv[])
 			FD_SET(newsockfd, &afds);
 			//add a user
 			add_user(cli_addr, &usercount, newsockfd);
+			chdir_to_ras(newsockfd);
 			//write welcome message and prompt
 			write(newsockfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE) * sizeof(char));
 			login_broadcast(newsockfd);

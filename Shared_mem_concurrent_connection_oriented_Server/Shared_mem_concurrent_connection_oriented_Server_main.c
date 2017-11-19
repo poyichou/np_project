@@ -421,6 +421,14 @@ void reaper(int signo){
 		recv_msg();
 	}
 }
+void chdir_to_ras(int sockfd){
+	if(chdir(getenv("HOME")) < 0){
+		err_dump("cd error");
+	}
+	if(chdir("ras") < 0){
+		err_dump("cd error");
+	}
+}
 int process_request(int sockfd){
 	//deal with 3 case: 
 	//		1.	aaaaaaaaa\r\n
@@ -624,6 +632,7 @@ int main(int argc, char* argv[])
 			err_dump("fork error");
 		}else if(pid == 0){
 			close(msockfd);
+			chdir_to_ras(newsockfd);
 			initialize_env();
 			//get shared memory
 			get_shared_mem();
