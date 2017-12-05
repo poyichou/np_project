@@ -604,6 +604,9 @@ void del_shared_mem(){
 		err_dump("server: can't detach shared memory");
 	if(shmctl(shmid, IPC_RMID, (struct shmid_ds *) 0) < 0) 
 		err_dump("cannot remove shm");
+	
+	printf("\n");
+	exit(0);
 }
 int main(int argc, char* argv[])
 {
@@ -612,8 +615,8 @@ int main(int argc, char* argv[])
 	struct sockaddr_in cli_addr;
 	socklen_t alen; // client address length
 	msockfd = passiveTCP(SERV_TCP_PORT, 5);
-	//delete shared memory no matter it's which last server failed to delete or which getten this time
-	del_shared_mem();
+	//delete shared memory when receive ctrl-c
+	signal(SIGINT, del_shared_mem);
 
 
 	signal(SIGCHLD, reaper);//handle dead child
@@ -632,7 +635,7 @@ int main(int argc, char* argv[])
 			err_dump("fork error");
 		}else if(pid == 0){
 			close(msockfd);
-			chdir_to_ras(newsockfd);
+			//chdir_to_ras(newsockfd);
 			initialize_env();
 			//get shared memory
 			get_shared_mem();
