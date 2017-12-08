@@ -3,7 +3,7 @@
 #define F_WRITING 1
 #define F_READING 2
 #define F_DONE 4
-#define MAXSIZE 256
+#define MAXSIZE 512
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -70,23 +70,73 @@ int connect_request(){
 	}
 	return connectnum;
 }
-void send_comm(int i, int *status, fd_set *rs, fd_set *ws){
+void print_as_script(int idx, char *respmsg, int len){
+	int i;
+	int newline = 0;
+	printf("<script>document.all['m%d'].innerHTML += \"", idx);
+	for(i = 0 ; i < len ; i++){
+		if(respmsg[i] == '\n' || respmsg[i] == '\r'){
+			newline++;
+			continue;
+		}
+		if(newline > 0){
+			printf("<br>");
+			newline = 0;
+		}
+		switch (respmsg[i])
+		{
+			case '<':
+				printf("&lt");
+				break;
+			case '>':
+				printf("&gt");
+				break;
+			case ' ':
+				printf("&nbsp");
+				break;
+			case '&':
+				printf("&amp");
+				break;
+			case '\"':
+				printf("&quot");
+				break;
+			//case '\'':
+			//	//ie not support
+			//	printf("&apos");
+			//	break;
+			case '\t':
+				printf("&emsp");
+				break;
+			default:
+				printf("%c", respmsg[i]);
+				break;
+		}
+	}
+	if(newline > 0){
+		printf("<br>");
+	}
+	printf("\";</script>");
+	fflush(stdout);
+}
+int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 	char buff[MAXSIZE];
 	int wc = 0;
 	int writen = 0;
 	//get 1 line of commands
-	if(fgets(buff, MAXSIZE - 3, fp[i]) == NULL){
+	if(fgets(buff, MAXSIZE - 3, fp[idx]) == NULL){
 		//finish reading file
-		return;
+		status[idx] = F_DONE;
+		conn--;
+		return conn;
 	}
 	//change "\n" to "\r\n"
-	if(buff[strlen(buff)] == '\n')
-		buff[strlen(buff)] = '\0';
+	if(buff[strlen(buff) - 1] == '\n')
+		buff[strlen(buff) - 1] = '\0';
 	strcat(buff, "\r\n");
 	//send to server
 	while(writen < strlen(buff))
 	{
-		wc = write(sockfd[i], buff + writen, strlen(buff) - writen);
+		wc = write(sockfd[idx], buff + writen, strlen(buff) - writen);
 		if(wc < 0){
 			perror("write command error");
 			exit(1);
@@ -94,25 +144,25 @@ void send_comm(int i, int *status, fd_set *rs, fd_set *ws){
 		writen += wc;
 	}
 	// write finished
-	FD_CLR(sockfd[i], ws);
-	status[i] = F_READING;
-	FD_SET(sockfd[i], rs);
+	FD_CLR(sockfd[idx], ws);
+	status[idx] = F_READING;
+	FD_SET(sockfd[idx], rs);
+	print_as_script(idx, buff, strlen(buff));
+	return conn;
 }
-int recv_response(int i, int *len, int *status, int conn, char *respmsg, int sockfd, fd_set *rs, fd_set *ws){
+void recv_response(int i, int *len, int *status, char *respmsg, int sockfd, fd_set *rs, fd_set *ws){
 	len[i] = read(sockfd, respmsg, MAXSIZE - 1);
 	if (len[i] <= 0) {
 		// read finished
 		FD_CLR(sockfd, rs);
 		status[i] = F_DONE ;
-		conn--;
 	}else if(len[i] < MAXSIZE - 1){
 		//read done
 		FD_CLR(sockfd, rs);
 		status[i] = F_WRITING;
 		FD_SET(sockfd, ws);
+		respmsg[len[i]] = '\0';
 	}
-	respmsg[len[i]] = '\0';
-	return conn;
 }
 void read_query(){
 	char *q = getenv("QUERY_STRING");
@@ -121,7 +171,11 @@ void read_query(){
 	char *buff;
 	buff = strtok(query, "&");
 	while(buff != NULL)
-	{
+	{	
+		if(strlen(buff) < 4){
+			buff = strtok(NULL, "&");
+			continue;
+		}
 		//hn=xxx.xxx.xxx.xxx, n start with 1
 		if(buff[0] == 'h'){
 			snprintf(host[buff[1] - '0' - 1], sizeof(host[buff[1] - '0' - 1]), "%s", buff + 3);
@@ -135,19 +189,6 @@ void read_query(){
 			snprintf(file[buff[1] - '0' - 1], sizeof(file[buff[1] - '0' - 1]), "%s", buff + 3);
 		}
 		buff = strtok(NULL, "&");
-	}
-}
-void print_result(char *respmsg, int len){
-	int wc = 0;
-	int writen = 0;
-	while(writen < len)
-	{
-		wc = write(1, respmsg + writen, len - writen);
-		writen += wc;
-		if(wc < 0){
-			perror("write error");
-			exit(1);
-		}
 	}
 }
 void set_fd_set_status(fd_set *rfds, fd_set *wfds, fd_set *rs, fd_set *ws, int *status, int conn){
@@ -179,14 +220,41 @@ void fail_done_succeed_write(int i, int *status, fd_set *ws){
 	//the first thing to do if succeeded is read welcome
 	status[i] = F_READING;
 	FD_CLR(sockfd[i], ws);
+	//int oldfl = fcntl(sockfd[i], F_GETFL, 0);
+	//fcntl(sockfd[i], F_SETFL, oldfl & ~O_NONBLOCK);
+}
+void print_first_html(int conn){
+	int i;
+	printf("<html>");
+	printf("<head>");
+	printf("<meta http-equiv=\"Content-Type\" content=\"text/html; charset=big5\" />");
+	printf("<title>Network Programming Homework 3</title>");
+	printf("</head>");
+	printf("<body bgcolor=#336699>");
+	printf("<font face=\"Courier New\" size=2 color=#FFFF99>");
+	printf("<table width=\"800\" border=\"1\">");
+	printf("<tr>");
+	for(i = 0 ; i < conn ; i++){
+		printf("<td>%s</td>", host[i]);
+	}
+	printf("<tr>");
+	for(i = 0 ; i < conn ; i++){
+		printf("<td valign=\"top\" id=\"m%d\"></td>", i);
+	}
+	printf("</table>");
+	printf("</font>");
+	printf("</body>");
+	printf("</html>");
+	fflush(stdout);
 }
 int main()
 {
 	//clear
 	memset(host, 0, sizeof(host)); memset(port, 0, sizeof(port)); memset(file, 0, sizeof(file));
 	read_query();
-	int conn;//connect number
+	int conn = 0;//connect number
 	conn = connect_request();
+	print_first_html(conn);
 	fd_set rfds; /* readable file descriptors*/
 	fd_set wfds; /* writable file descriptors*/
 	fd_set rs; /* active file descriptors*/
@@ -196,6 +264,7 @@ int main()
 	int status[5];
 	set_fd_set_status(&rfds, &wfds, &rs, &ws, status, conn);
 	char respmsg[MAXSIZE];
+	int bconn = conn;//connect number at beginning
 	while(conn > 0)
 	{
 		memcpy(&rfds, &rs, sizeof(rfds));
@@ -205,20 +274,20 @@ int main()
 			exit(1);
 		}
 		int i;
-		for(i = 0 ; i < conn ; i++){
+		for(i = 0 ; i < bconn ; i++){
 			//check connect succeeded or failed
 			if (status[i] == F_CONNECTING && (FD_ISSET(sockfd[i], &rfds) || FD_ISSET(sockfd[i], &wfds))){
 				fail_done_succeed_write(i, status, &ws);
 			}
 			//write
 			else if (status[i] == F_WRITING && FD_ISSET(sockfd[i], &wfds)){
-				send_comm(i, status, &rs, &ws);
+				conn = send_comm(i, status, conn, &rs, &ws);
 			}
 			//read
 			else if (status[i] == F_READING && FD_ISSET(sockfd[i], &rfds) ) {
-				conn = recv_response(i, len, status, conn, respmsg, sockfd[i], &rs, &ws);
+				recv_response(i, len, status, respmsg, sockfd[i], &rs, &ws);
 				//print all
-				print_result(respmsg, len[i]);
+				print_as_script(i, respmsg, len[i]);
 			}
 		}
 	}
