@@ -1,2 +1,6 @@
-all:Remote_Access_Server.c  Remote_Access_Server.h Single_Process_Concurrent_Server_main.c Single_Process_Concurrent_Server_main.h
+all: Single_Process_Concurrent_Server
+Single_Process_Concurrent_Server: Remote_Access_Server.c  Remote_Access_Server.h Single_Process_Concurrent_Server_main.c Single_Process_Concurrent_Server_main.h
 	gcc Remote_Access_Server.c Single_Process_Concurrent_Server_main.c -o Single_Process_Concurrent_Server -Wall -g
+.PHONY : clean
+clean:
+	rm Single_Process_Concurrent_Server

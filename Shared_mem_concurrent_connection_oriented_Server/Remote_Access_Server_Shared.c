@@ -79,7 +79,7 @@ int parser(int sockfd, char* line, int len){//it also call exec
 	strcpy(arg[argcount++], buff);
 	arg[argcount] = NULL;
 	if(check_arg_valid(sockfd, arg[0]) != 0){
-		err_dump_sock_v(sockfd, "Unknown command: [", buff, "].");
+		err_dump_sock_v(sockfd, "Unknown command: [[", buff, "].");
 		int i;
 		//check if numbered pipe should be execute
 		for(i = 0 ; i < cmdcount ; i++){

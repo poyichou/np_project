@@ -636,7 +636,9 @@ int main(int argc, char* argv[])
 		}else if(pid == 0){
 			close(msockfd);
 			//chdir_to_ras(newsockfd);
-			initialize_env();
+			
+			//choose one of them
+			/*initialize_env();*/set_Path_to_user();
 			//get shared memory
 			get_shared_mem();
 			//add a user
