@@ -156,12 +156,20 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sockfd, fd_s
 		// read finished
 		FD_CLR(sockfd, rs);
 		status[i] = F_DONE ;
-	}else if(len[i] < MAXSIZE - 1){
-		//read done
-		FD_CLR(sockfd, rs);
-		status[i] = F_WRITING;
-		FD_SET(sockfd, ws);
+		return;
+	}
+	else{
 		respmsg[len[i]] = '\0';
+		int j;
+		for(j = 0 ; j < strlen(respmsg) ; j++){
+			if(respmsg[j] == '%'){
+				//read done
+				FD_CLR(sockfd, rs);
+				status[i] = F_WRITING;
+				FD_SET(sockfd, ws);
+				return;
+			}
+		}
 	}
 }
 void read_query(){
