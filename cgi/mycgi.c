@@ -70,10 +70,13 @@ int connect_request(){
 	}
 	return connectnum;
 }
-void print_as_script(int idx, char *respmsg, int len){
+void print_as_script(int idx, char *respmsg, int len, int strong){
 	int i;
 	int newline = 0;
 	printf("<script>document.all['m%d'].innerHTML += \"", idx);
+	if(strong == 1){
+		printf("<b>");
+	}
 	for(i = 0 ; i < len ; i++){
 		if(respmsg[i] == '\n' || respmsg[i] == '\r'){
 			newline++;
@@ -112,6 +115,9 @@ void print_as_script(int idx, char *respmsg, int len){
 				break;
 		}
 	}
+	if(strong == 1){
+		printf("</b>");
+	}
 	if(newline > 0){
 		printf("<br>");
 	}
@@ -147,7 +153,7 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 	FD_CLR(sockfd[idx], ws);
 	status[idx] = F_READING;
 	FD_SET(sockfd[idx], rs);
-	print_as_script(idx, buff, strlen(buff));
+	print_as_script(idx, buff, strlen(buff), 1);
 	return conn;
 }
 void recv_response(int i, int *len, int *status, char *respmsg, int sockfd, fd_set *rs, fd_set *ws){
@@ -295,7 +301,7 @@ int main()
 			else if (status[i] == F_READING && FD_ISSET(sockfd[i], &rfds) ) {
 				recv_response(i, len, status, respmsg, sockfd[i], &rs, &ws);
 				//print all
-				print_as_script(i, respmsg, len[i]);
+				print_as_script(i, respmsg, len[i], 0);
 			}
 		}
 	}
