@@ -141,7 +141,8 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 		buff[strlen(buff) - 1] = '\0';
 	strcat(buff, "\r\n");
 	//send to server
-	while(writen < strlen(buff))
+	//if sockfd[idx] == 0, has been closed by server
+	while(sockfd[idx] != 0 && writen < strlen(buff))
 	{
 		wc = write(sockfd[idx], buff + writen, strlen(buff) - writen);
 		if(wc < 0){
@@ -151,17 +152,21 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 		writen += wc;
 	}
 	// write finished
-	FD_CLR(sockfd[idx], ws);
-	status[idx] = F_READING;
-	FD_SET(sockfd[idx], rs);
+	if(sockfd[idx] != 0){
+		FD_CLR(sockfd[idx], ws);
+		status[idx] = F_READING;
+		FD_SET(sockfd[idx], rs);
+	}
 	print_as_script(idx, buff, strlen(buff), 1);
 	return conn;
 }
-void recv_response(int i, int *len, int *status, char *respmsg, int sockfd, fd_set *rs, fd_set *ws){
-	len[i] = read(sockfd, respmsg, MAXSIZE - 1);
+void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set *rs, fd_set *ws){
+	len[i] = read(sockfd[i], respmsg, MAXSIZE - 1);
 	if (len[i] <= 0) {
 		// read finished
-		FD_CLR(sockfd, rs);
+		FD_CLR(sockfd[i], rs);
+		close(sockfd[i]);
+		sockfd[i] = 0;
 		status[i] = F_DONE ;
 		return;
 	}
@@ -171,9 +176,9 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sockfd, fd_s
 		for(j = 0 ; j < strlen(respmsg) ; j++){
 			if(respmsg[j] == '%'){
 				//read done
-				FD_CLR(sockfd, rs);
+				FD_CLR(sockfd[i], rs);
 				status[i] = F_WRITING;
-				FD_SET(sockfd, ws);
+				FD_SET(sockfd[i], ws);
 				return;
 			}
 		}
