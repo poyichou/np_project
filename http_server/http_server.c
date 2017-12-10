@@ -190,7 +190,7 @@ void process_request(int sockfd){
 	memset(cgi_name, 0, sizeof(cgi_name));
 	set_env(sockfd);
 	read_request(sockfd, req);
-	perror(req);
+	//perror(req);
 	parse_request(req, cgi_name);
 	exec_cgi(sockfd, cgi_name);
 }

@@ -133,6 +133,7 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 		//finish reading file
 		status[idx] = F_DONE;
 		conn--;
+		fclose(fp[idx]);
 		return conn;
 	}
 	//change "\n" to "\r\n"
