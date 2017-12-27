@@ -137,31 +137,6 @@ void sock4_reply(int sockfd, unsigned int ip, unsigned int port, unsigned cd, in
 		wc = write(sockfd, package, 8);
 	}
 }
-void process_connect(int msockfd, unsigned int DST_IP, unsigned int DST_PORT){
-	sock4_reply(msockfd, DST_IP, DST_PORT, 1, 90);
-	char addr[16];
-	snprintf(addr, sizeof(addr), "%u.%u.%u.%u", DST_IP >> 24, DST_IP >> 16 & 0xFF, DST_IP >> 8 & 0xFF, DST_IP & 0xFF);
-	int port = DST_PORT / 256 * 10 + DST_PORT % 256;
-	int ssockfd = connectTCP(addr, port);
-	int rc, wc = 0;
-	char buff[MAXSIZE];
-	while(1)
-	{
-		rc = read(ssockfd, buff, MAXSIZE);
-		if(rc < 0){
-			perror("read error");
-			exit(1);
-		}else if(rc == 0){
-			exit(0);
-		}else{
-			wc = write(msockfd, buff, rc);
-			if(wc < 0){
-				perror("write error");
-				exit(1);
-			}
-		}
-	}
-}
 int passive_bind_TCP(int qlen){
 	int bindfd;
 	struct sockaddr_in  bind_addr;
@@ -249,6 +224,14 @@ void process_bind(int msockfd){
 	//must send again
 	sock4_reply(msockfd, 0, ntohs(bindaddr.sin_port), 2, 90);
 	transfer_data(msockfd, ftp_fd);
+}
+void process_connect(int msockfd, unsigned int DST_IP, unsigned int DST_PORT){
+	sock4_reply(msockfd, DST_IP, DST_PORT, 1, 90);
+	char addr[16];
+	snprintf(addr, sizeof(addr), "%u.%u.%u.%u", DST_IP >> 24, DST_IP >> 16 & 0xFF, DST_IP >> 8 & 0xFF, DST_IP & 0xFF);
+	int port = DST_PORT / 256 * 10 + DST_PORT % 256;
+	int ssockfd = connectTCP(addr, port);
+	transfer_data(msockfd, ssockfd);
 }
 int handle_request(int sockfd){
 	int rc;
