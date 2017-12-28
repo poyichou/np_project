@@ -1,6 +1,7 @@
-#define SERV_TCP_PORT 7000
+#define SERV_TCP_PORT 5678
 #define REQSIZE 20
 #define MAXSIZE 512
+#define DEBUG 0
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -64,11 +65,18 @@ int connectTCP(char *addr, int port){
 	//flags = fcntl(sockfd, F_GETFL, 0);
 	//set sockfd as non blocking and the mode before
 	//fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+	if(DEBUG != 0){
+		printf("connecting to %s: %d\n", addr, port);
+	}
 	if(connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
-		if (errno != EINPROGRESS){ 
+		//if (errno != EINPROGRESS){ 
 			perror("can't connect sock");
 			exit(-1);
-		}
+		//}
+	}
+	if(DEBUG != 0){
+		printf("connected\n");
+		fflush(stdout);
 	}
 	return sockfd;
 }
@@ -98,8 +106,10 @@ int analyze_conf(unsigned int DST_IP, unsigned int mode){
 				perror("conf file not follow format");
 				exit(1);
 			}
-			if(buffer[i] == '.')
+			if(buffer[i] == '.'){
 				j++;
+				continue;
+			}
 			if(buffer[i] == '#')
 				break;
 			//like strcat
@@ -122,7 +132,7 @@ int analyze_conf(unsigned int DST_IP, unsigned int mode){
 	return 0;
 }
 void sock4_reply(int sockfd, unsigned int ip, unsigned int port, unsigned cd, int code){
-	unsigned int package[8];
+	unsigned char package[8];
 	package[0] = 0;
 	package[1] = code;//90:granted, 91:reject or fail
 	package[2] = port / 256;
@@ -168,9 +178,17 @@ int send_data(int sfd, int dfd, int count, fd_set *rs){//source fd, destination 
 		perror("read error");
 		exit(1);
 	}else if(rc == 0){//finish
+		if(DEBUG != 0){
+			printf("close\n");
+		}
 		FD_CLR(sfd, rs);
 		count--;
 	}else{
+		if(DEBUG != 0){
+			printf("receive data=\n");
+			fflush(stdout);
+			wc = write(1, buff, rc);
+		}
 		wc = write(dfd, buff, rc);
 		if(wc < 0){
 			perror("write error");
@@ -196,10 +214,20 @@ void transfer_data(int msockfd, int ftp_fd){
 			exit(1);
 		}
 		if(FD_ISSET(msockfd, &rfds)){
+			if(DEBUG != 0){
+				printf("send_data_form_m\n");
+			}
 			count = send_data(msockfd, ftp_fd, count, &rs);
 		}
 		if(FD_ISSET(ftp_fd, &rfds)){
+			if(DEBUG != 0){
+				printf("send_data_form_f\n");
+			}
 			count = send_data(ftp_fd, msockfd, count, &rs);
+		}
+		if(DEBUG != 0){
+			printf("count=%d\n", count);
+			fflush(stdout);
 		}
 	}
 }
@@ -225,17 +253,18 @@ void process_bind(int msockfd){
 	sock4_reply(msockfd, 0, ntohs(bindaddr.sin_port), 2, 90);
 	transfer_data(msockfd, ftp_fd);
 }
-void process_connect(int msockfd, unsigned int DST_IP, unsigned int DST_PORT){
-	sock4_reply(msockfd, DST_IP, DST_PORT, 1, 90);
+void process_connect(int browserfd, unsigned int DST_IP, unsigned int DST_PORT){
+	sock4_reply(browserfd, DST_IP, DST_PORT, 1, 90);
 	char addr[16];
 	snprintf(addr, sizeof(addr), "%u.%u.%u.%u", DST_IP >> 24, DST_IP >> 16 & 0xFF, DST_IP >> 8 & 0xFF, DST_IP & 0xFF);
-	int port = DST_PORT / 256 * 10 + DST_PORT % 256;
+	int port = DST_PORT;
 	int ssockfd = connectTCP(addr, port);
-	transfer_data(msockfd, ssockfd);
+	transfer_data(browserfd, ssockfd);
 }
 int handle_request(int sockfd){
 	int rc;
 	char request[REQSIZE];
+	unsigned char uns_req[4];
 	unsigned char VN;
 	unsigned char CD;
 	unsigned int DST_PORT;
@@ -248,18 +277,34 @@ int handle_request(int sockfd){
 			perror("read error");
 			exit(1);
 		}
+		uns_req[0]  = request[4];
+		uns_req[1]  = request[5];
+		uns_req[2]  = request[6];
+		uns_req[3]  = request[7];
 		VN			= request[0];
 		CD			= request[1];//1:connect, 2:bind
-		DST_PORT	= request[2] << 8  | request[3];
-		DST_IP		= request[4] << 24 | request[5] << 16 | request[6] << 8 | request[7];
+		DST_PORT	= request[2] << 8  | (request[3]&0xFF);
+		DST_IP		= uns_req[0] << 24 | uns_req[1] << 16 | uns_req[2] << 8 | uns_req[3];
 		USER_ID 	= request + 8;
+		printf("<D_IP>\t:%u.%u.%u.%u\n", DST_IP>>24, (DST_IP>>16)&0xFF, (DST_IP>>8)&0xff, DST_IP&0xff);
+		printf("<D_PORT>\t:%u\n", DST_PORT);
+		if(CD == 1){
+			printf("<COMMAND>\t:CONNECT\n");
+		}else{
+			printf("<COMMAND>\t:BIND\n");
+		}
+		fflush(stdout);
 		//pass
 		if(analyze_conf(DST_IP, CD) == 1){
+			printf("<REPLY>\t:ACCEPT\n");
+			fflush(stdout);
 			if(CD == 1)
 				process_connect(sockfd, DST_IP, DST_PORT);
 			else
 				process_bind(sockfd);
 		}else{//fail
+			printf("<REPLY>\t:REJECT\n");
+			fflush(stdout);
 			sock4_reply(sockfd, DST_IP, DST_PORT, CD, 91);
 			exit(1);
 		}
@@ -285,6 +330,9 @@ int main()
 			perror("accept error");
 			exit(1);
 		}
+		printf("<S_IP>\t:%s\n", inet_ntoa(cli_addr.sin_addr));
+		printf("<S_PORT>\t:%hu\n", cli_addr.sin_port);
+		fflush(stdout);
 		if((pid = fork()) < 0){
 			perror("fork error");
 			exit(1);
