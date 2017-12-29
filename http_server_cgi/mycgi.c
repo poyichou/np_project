@@ -171,9 +171,9 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 		return;
 	}
 	else{
-		respmsg[len[i]] = '\0';
+		//respmsg[len[i]] = '\0';
 		int j;
-		for(j = 0 ; j < strlen(respmsg) ; j++){
+		for(j = 0 ; j < len[i] ; j++){
 			if(respmsg[j] == '%'){
 				//read done
 				FD_CLR(sockfd[i], rs);
