@@ -96,13 +96,13 @@ int analyze_conf(unsigned int DST_IP, unsigned int mode){
 		if(buffer[7] != m)
 			continue;
 		for(i = 9 ; i < strlen(buffer) && j < 4; i++){
-			if(strlen(ip[j]) >= 3){
-				perror("conf file not follow format");
-				exit(1);
-			}
 			if(buffer[i] == '.'){
 				j++;
 				continue;
+			}
+			if(strlen(ip[j]) >= 3){
+				perror("conf file not follow format");
+				exit(1);
 			}
 			if(buffer[i] == '#')
 				break;
@@ -176,8 +176,10 @@ int send_data(int sfd, int dfd, int count, fd_set *rs){//source fd, destination 
 		perror("read error");
 		exit(1);
 	}else if(rc == 0){//finish
+		//if one side close connection, exit
 		FD_CLR(sfd, rs);
 		count--;
+		exit(0);
 	}else{
 		if(DEBUG != 0){
 			printf("receive data=\n");
@@ -201,11 +203,15 @@ void transfer_data(int msockfd, int ftp_fd){
 	FD_SET(msockfd, &rs);
 	FD_SET(ftp_fd,  &rs);
 	int count = 2;
-	while(count > 0)
+	struct timeval tv;
+	//protocol set time limit to 2 minute
+	tv.tv_sec = 120;//second
+	tv.tv_usec = 0;//microsecond
+	//while(count > 0)
+	while(1)
 	{
-		printf("count=%d\n", count);
 		memcpy(&rfds, &rs, sizeof(rfds));
-		if (select(nfds, &rfds, (fd_set*)0, (fd_set*)0, (struct timeval*)0) < 0 ){
+		if (select(nfds, &rfds, (fd_set*)0, (fd_set*)0, &tv) < 0 ){
 			perror("select error");
 			exit(1);
 		}
@@ -213,13 +219,17 @@ void transfer_data(int msockfd, int ftp_fd){
 			if(DEBUG != 0){
 				printf("send_data_form_m\n");
 			}
-			count = send_data(msockfd, ftp_fd, count, &rs);
+			//count = send_data(msockfd, ftp_fd, count, &rs);
+			//if one side close connection, exit
+			send_data(msockfd, ftp_fd, count, &rs);
 		}
 		if(FD_ISSET(ftp_fd, &rfds)){
 			if(DEBUG != 0){
 				printf("send_data_form_f\n");
 			}
-			count = send_data(ftp_fd, msockfd, count, &rs);
+			//count = send_data(ftp_fd, msockfd, count, &rs);
+			//if one side close connection, exit
+			send_data(ftp_fd, msockfd, count, &rs);
 		}
 		if(DEBUG != 0){
 			printf("count=%d\n", count);
@@ -269,8 +279,8 @@ int handle_request(int sockfd){
 	unsigned int DST_PORT;
 	unsigned int DST_IP;
 	unsigned char *USER_ID;
-	while(1)
-	{
+	//while(1)
+	//{
 		rc = read(sockfd, request, REQSIZE);
 		if(rc < 0){
 			perror("read error");
@@ -308,8 +318,15 @@ int handle_request(int sockfd){
 			sock4_reply(sockfd, DST_IP, DST_PORT, CD, 91);
 			exit(1);
 		}
-	}
+	//}
 	return 0;
+}
+void reaper(int signo){
+	//union wait status;
+	int status;
+	waitpid(-1, &status, WNOHANG);
+	//while(wait3(&status, WNOHANG, (struct rusage*)0) >= 0)
+	//	/*empty*/;
 }
 int main()
 {
@@ -318,6 +335,7 @@ int main()
 	struct sockaddr_in cli_addr;
 	socklen_t alen; // client address length
 	msockfd = passiveTCP(SERV_TCP_PORT, 5);
+	signal(SIGCHLD, reaper);//handle dead child
 	while(1)
 	{
 		// new connection from client
