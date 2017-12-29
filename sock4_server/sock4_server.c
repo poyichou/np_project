@@ -91,6 +91,7 @@ int analyze_conf(unsigned int DST_IP, unsigned int mode){
 	char m = (mode == 1) ? 'c' : 'b';//1:connect , 2:bind
 	while(fgets(buffer, MAXSIZE, fp) != NULL)
 	{
+		j = 0;
 		t_IP = 0;
 		if(buffer[7] != m)
 			continue;
