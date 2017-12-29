@@ -271,15 +271,16 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 	if (len[i] <= 0) {
 		// read finished
 		FD_CLR(sockfd[i], rs);
+		FD_CLR(sockfd[i], ws);
 		close(sockfd[i]);
 		sockfd[i] = 0;
 		status[i] = F_DONE ;
 		return;
 	}
 	else{
-		respmsg[len[i]] = '\0';
+		//respmsg[len[i]] = '\0';
 		int j;
-		for(j = 0 ; j < strlen(respmsg) ; j++){
+		for(j = 0 ; j < len[i] ; j++){
 			if(respmsg[j] == '%'){
 				//read done
 				FD_CLR(sockfd[i], rs);
