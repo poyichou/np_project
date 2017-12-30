@@ -266,7 +266,7 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 	print_as_script(idx, buff, strlen(buff), 1);
 	return conn;
 }
-void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set *rs, fd_set *ws){
+void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set *rs, fd_set *ws, int conn){
 	len[i] = read(sockfd[i], respmsg, MAXSIZE - 1);
 	if (len[i] <= 0) {
 		// read finished
@@ -275,7 +275,9 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 		close(sockfd[i]);
 		sockfd[i] = 0;
 		status[i] = F_DONE ;
-		return;
+		conn--;
+		return conn;
+	}
 	}
 	else{
 		//respmsg[len[i]] = '\0';
@@ -286,7 +288,7 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 				FD_CLR(sockfd[i], rs);
 				status[i] = F_WRITING;
 				FD_SET(sockfd[i], ws);
-				return;
+				return conn;
 			}
 		}
 	}
@@ -443,7 +445,7 @@ int main()
 			}
 			//read
 			else if (status[i] == F_READING && FD_ISSET(sockfd[i], &rfds) ) {
-				recv_response(i, len, status, respmsg, sockfd[i], &rs, &ws);
+				conn = recv_response(i, len, status, respmsg, sockfd[i], &rs, &ws, conn);
 				//print all
 				print_as_script(i, respmsg, len[i], 0);
 			}
