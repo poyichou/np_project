@@ -266,7 +266,7 @@ int send_comm(int idx, int *status, int conn, fd_set *rs, fd_set *ws){
 	print_as_script(idx, buff, strlen(buff), 1);
 	return conn;
 }
-void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set *rs, fd_set *ws, int conn){
+int recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set *rs, fd_set *ws, int conn){
 	len[i] = read(sockfd[i], respmsg, MAXSIZE - 1);
 	if (len[i] <= 0) {
 		// read finished
@@ -277,7 +277,6 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 		status[i] = F_DONE ;
 		conn--;
 		return conn;
-	}
 	}
 	else{
 		//respmsg[len[i]] = '\0';
@@ -292,6 +291,7 @@ void recv_response(int i, int *len, int *status, char *respmsg, int sock, fd_set
 			}
 		}
 	}
+	return conn;
 }
 void read_query(){
 	char *q = getenv("QUERY_STRING");
